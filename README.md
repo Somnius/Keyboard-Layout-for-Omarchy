@@ -8,7 +8,7 @@ The bar glyph is your live layout abbreviation (`EN`, `GR`, `PT`…):
 - **Right-click** — switch to the next layout immediately.
 - **Hover** — tooltip with the full keymap name.
 
-<img width="453" height="843" alt="image" src="https://github.com/user-attachments/assets/7608a4ce-e7b4-445d-b0f7-2dfd2196d78e" />
+<img width="453" height="843" alt="Keyboard Layout panel" src="preview.png" />
 
 ## Features
 
@@ -17,6 +17,7 @@ The bar glyph is your live layout abbreviation (`EN`, `GR`, `PT`…):
 - **Switches the keyboard you actually type on**: reads `hyprctl devices -j`, filters out virtual/injected keyboards (fcitx5's seat keyboard, ACPI buttons), and follows the furthest-advanced typed device — the same logic as Omarchy's first-party widget.
 - **Caps LED indicator** when using Caps Lock as the toggle (`grp_led:caps`).
 - **Owns its config honestly**: settings are written to `~/.config/hypr/input.lua` only when you press *Apply* in the panel; a one-time timestamped backup (`input.lua.bak.<ts>`) is kept before the first write. Nothing is overwritten without an explicit click.
+- **Bounded inputs**: `input.lua`, plugin config, `hyprctl` device data and `xkbcli` metadata are read with byte ceilings. Oversized, malformed or unexpectedly shaped input is rejected without replacing the last accepted state.
 
 ## Install
 
@@ -40,7 +41,7 @@ omarchy-shell shell rescanPlugins
 Validate at any time with:
 
 ```sh
-omarchy plugin validate ~/.config/omarchy/plugins/lef.keyboard-layout
+omarchy plugin validate "$PWD"
 ```
 
 ## Configuration
@@ -78,7 +79,7 @@ o.bind("SUPER + ALT + K", "Next keyboard layout", "omarchy-shell lef.keyboard-la
 
 ## External dependencies
 
-Ships with Omarchy: `hyprctl`, `xkbcli`, the `omarchy` CLI, and `bash`.
+Ships with Omarchy: `hyprctl`, `xkbcli`, Perl, the `omarchy` CLI, and `bash`.
 
 ## Uninstall
 

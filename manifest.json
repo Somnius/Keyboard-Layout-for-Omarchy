@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lef.keyboard-layout",
   "name": "Keyboard Layout",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "lef",
   "license": "MIT",
   "description": "Display and manage Hyprland keyboard layouts. Shows the active layout on the bar, switches with one click or hotkey, and edits ~/.config/hypr/input.lua safely (with automatic backup).",

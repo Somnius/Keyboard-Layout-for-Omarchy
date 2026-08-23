@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "ServiceLogic.js" as Logic
 
 Item {
   id: root
@@ -9,6 +10,13 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string inputLuaPath: home + "/.config/hypr/input.lua"
   readonly property string configDir: home + "/.config/omarchy/keyboard-layout"
+  readonly property string configPath: configDir + "/config.json"
+  readonly property string boundedReadScriptPath: decodeURIComponent(
+    String(Qt.resolvedUrl("BoundedRead.pl")).replace(/^file:\/\//, ""))
+  readonly property string boundedExecScriptPath: decodeURIComponent(
+    String(Qt.resolvedUrl("BoundedExec.pl")).replace(/^file:\/\//, ""))
+  readonly property string writeInputScriptPath: decodeURIComponent(
+    String(Qt.resolvedUrl("WriteInput.pl")).replace(/^file:\/\//, ""))
   readonly property string moduleId: "lef.keyboard-layout"
   readonly property string repoUrl: "https://github.com/Somnius/Keyboard-Layout-for-Omarchy"
 
@@ -25,6 +33,12 @@ Item {
   property string lastError: ""
   property string lastAction: ""
 
+  property bool inputReadPending: false
+  property bool configReadPending: false
+  property bool devicesReadPending: false
+  property bool configHasGoodState: false
+  property string pendingPlacement: ""
+
   // Short language codes: xkb description -> brief ("English (US)": "en"),
   // read from xkb's own table instead of maintained by hand.
   property var layoutBriefs: ({})
@@ -37,8 +51,13 @@ Item {
   property string lastPlaceAction: ""
 
   function saveConfig() {
-    configFile.setText(JSON.stringify({ asked: true, placement: root.placement }))
-    root.askedState = 1
+    var text = JSON.stringify({ asked: true, placement: root.placement }) + "\n"
+    // Reads stay disabled. Reset FileView's write cache so an externally
+    // replaced file can never suppress this explicit placement write.
+    configFile.path = ""
+    configFile.path = root.configPath
+    configFile.setText(text)
+    root.applyConfig(text)
   }
 
   function place(section) {
@@ -46,19 +65,22 @@ Item {
       root.lastPlaceAction = "Only center or right — never left"
       return
     }
-    var moved = section !== root.placement
-    if (moved) {
-      var args = ["omarchy", "bar", "move", root.moduleId, "--section", section]
-      if (section === "center") args.push("--after", "omarchy.clock")
-      placeProc.command = args
-      placeProc.running = true
-      root.placement = section
+    if (placeProc.running) {
+      root.lastPlaceAction = "A placement move is already in progress"
+      return
     }
-    saveConfig()
-    root.lastPlaceAction = moved
-      ? "Moved to " + section + " — reloading Hyprland & shell…"
-      : "Already on the " + section
-    if (moved) placeReloadTimer.restart()
+    if (section === root.placement) {
+      saveConfig()
+      root.lastPlaceAction = "Already on the " + section
+      return
+    }
+
+    root.pendingPlacement = section
+    var args = ["omarchy", "bar", "move", root.moduleId, "--section", section]
+    if (section === "center") args.push("--after", "omarchy.clock")
+    placeProc.command = args
+    placeProc.running = true
+    root.lastPlaceAction = "Moving to " + section + "…"
   }
 
   readonly property var hotkeyMap: {
@@ -72,19 +94,10 @@ Item {
     "ctrl+shift": "Ctrl+Shift"
   }
 
-  // Same exclusions as the first-party widget: fcitx5's injection keyboard,
-  // ACPI buttons and lid switches all carry the seat's layout list, answer to
-  // switchxkblayout, and nobody types on any of them.
-  readonly property string untypedPattern: "^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus)"
-
-  function isTypedKeyboard(name) {
-    return !new RegExp(root.untypedPattern).test(String(name || ""))
-  }
-
   function shortLabel(description) {
     if (!description) return ""
     // ponytail: first-word fallback reads ENG/POR; xkbcli briefs cover the rest.
-    var brief = root.layoutBriefs[description]
+    var brief = root.layoutBriefs["$" + description]
     var label = typeof brief === "string" && brief !== ""
       ? brief.split("-")[0]
       : String(description).split(/\s+/)[0]
@@ -99,83 +112,179 @@ Item {
   }
 
   function refresh() {
-    if (!devicesProc.running) devicesProc.running = true
+    if (devicesProc.running) {
+      root.devicesReadPending = true
+      return
+    }
+    root.devicesReadPending = false
+    devicesProc.running = true
   }
 
   function applyDevices(text) {
-    var listed
-    try { listed = JSON.parse(text || "{}").keyboards } catch (e) { return }
-    if (!Array.isArray(listed)) return
+    var result = Logic.parseDevices(text)
+    if (!result.ok) return result
 
-    var typed = listed.filter(function (k) { return root.isTypedKeyboard(k.name) })
-    if (typed.length === 0) { root.keyboardName = ""; root.currentKeymap = ""; root.currentAbbr = ""; return }
-
-    // Furthest-advanced wins: every keyboard shares the layout list, only the
-    // typed-on one moves through it, and index comparison survives wrapping.
-    var kb = typed.reduce(function (furthest, k) {
-      return ((k.active_layout_index || 0) > (furthest.active_layout_index || 0)) ? k : furthest
-    }, typed[0])
-
-    if (!kb.active_keymap) return
-    root.keyboardName = String(kb.name || "")
-    root.currentKeymap = String(kb.active_keymap)
+    root.keyboardName = result.value.keyboardName
+    root.currentKeymap = result.value.currentKeymap
     root.currentAbbr = root.shortLabel(root.currentKeymap)
     root.loaded = true
-  }
-
-  function parseOptions(optStr) {
-    var s = String(optStr || "")
-    if (/alt_shift_toggle/.test(s)) root.hotkey = "alt+shift"
-    else if (/ctrl_shift_toggle/.test(s)) root.hotkey = "ctrl+shift"
-    else if (/caps_toggle/.test(s)) root.hotkey = "caps"
-    root.led = /grp_led:caps/.test(s)
+    return result
   }
 
   function applyLua(text) {
-    var t = String(text || "")
-    var m = t.match(/kb_layout\s*=\s*"([^"]*)"/)
-    root.layouts = m ? m[1].split(",").map(function (s) { return s.trim() })
-                       .filter(function (s) { return s !== "" }) : []
-    var o = t.match(/kb_options\s*=\s*"([^"]*)"/)
-    parseOptions(o ? o[1] : "")
+    var result = Logic.parseLua(text)
+    if (!result.ok) return result
+
+    root.layouts = result.value.layouts
+    root.hotkey = result.value.hotkey
+    root.led = result.value.led
     root.loaded = true
+    return result
   }
 
-  function backupOnce() {
-    bakProc.command = ["bash", "-c",
-      "f=" + JSON.stringify(root.inputLuaPath) +
-      "; ls \"$f\".bak.* >/dev/null 2>&1 || cp \"$f\" \"$f.bak.$(date +%s)\""]
-    bakProc.running = true
+  function applyConfig(text) {
+    var result = Logic.parseConfig(text)
+    if (!result.ok) return result
+
+    root.placement = result.value.placement
+    root.askedState = result.value.askedState
+    root.configHasGoodState = true
+    return result
+  }
+
+  function applyBriefs(text) {
+    var result = Logic.parseBriefs(text)
+    if (!result.ok) return result
+
+    root.layoutBriefs = result.value
+    root.currentAbbr = root.shortLabel(root.currentKeymap)
+    return result
+  }
+
+  function readFailure(stderrText, fallback) {
+    var detail = String(stderrText || "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim()
+    return (detail || fallback).substring(0, 160)
+  }
+
+  function clearReadError(prefix) {
+    if (root.lastError.indexOf(prefix) === 0) root.lastError = ""
+  }
+
+  function requestInputRead() {
+    if (inputReadProc.running) {
+      root.inputReadPending = true
+      return
+    }
+    root.inputReadPending = false
+    inputReadProc.running = true
+  }
+
+  function requestConfigRead() {
+    if (configReadProc.running) {
+      root.configReadPending = true
+      return
+    }
+    root.configReadPending = false
+    configReadProc.running = true
+  }
+
+  function onInputReadExited(exitCode) {
+    var stale = root.inputReadPending
+    root.inputReadPending = false
+    if (stale) {
+      Qt.callLater(root.requestInputRead)
+      return
+    }
+
+    if (exitCode === 0) {
+      var result = root.applyLua(inputReadOutput.text)
+      if (result.ok) {
+        root.clearReadError("Invalid input.lua:")
+        root.clearReadError("Could not read input.lua:")
+      }
+      else root.lastError = "Invalid input.lua: " + result.error
+    } else {
+      root.lastError = "Could not read input.lua: "
+        + root.readFailure(inputReadError.text, "bounded read failed")
+    }
+    // Keep the panel reachable even when the first read fails. Literal
+    // defaults remain in place; later failures never replace good state.
+    if (!root.loaded) root.loaded = true
+  }
+
+  function onConfigReadExited(exitCode) {
+    var stale = root.configReadPending
+    root.configReadPending = false
+    if (stale) {
+      Qt.callLater(root.requestConfigRead)
+      return
+    }
+
+    if (exitCode === 0) {
+      var result = root.applyConfig(configReadOutput.text)
+      if (result.ok) {
+        root.clearReadError("Invalid config.json:")
+        root.clearReadError("Could not read config.json:")
+      }
+      else {
+        if (!root.configHasGoodState) root.askedState = -1
+        root.lastError = "Invalid config.json: " + result.error
+      }
+    } else {
+      if (!root.configHasGoodState) root.askedState = -1
+      if (exitCode !== 2 || root.configHasGoodState)
+        root.lastError = "Could not read config.json: "
+          + root.readFailure(configReadError.text, "bounded read failed")
+    }
+  }
+
+  function onDevicesExited(exitCode) {
+    var stale = root.devicesReadPending
+    root.devicesReadPending = false
+    if (stale) {
+      Qt.callLater(root.refresh)
+      return
+    }
+
+    if (exitCode !== 0) {
+      console.warn("keyboard-layout", "hyprctl devices rejected:",
+        root.readFailure(devicesError.text, "bounded producer failed"))
+      return
+    }
+    var result = root.applyDevices(devicesOutput.text)
+    if (!result.ok)
+      console.warn("keyboard-layout", "hyprctl devices rejected:", result.error)
   }
 
   function applySettings(primary, second, hk, useLed) {
-    var arr = [primary, second].filter(function (x) { return x && x.length && x !== "(none)" })
+    if (inputWriteProc.running) { root.lastError = "A save is already in progress"; return }
+    if (typeof primary !== "string" || typeof second !== "string"
+        || typeof hk !== "string" || typeof useLed !== "boolean") {
+      root.lastError = "Invalid settings"
+      return
+    }
+    var arr = [primary, second].filter(function (x) { return x !== "" && x !== "(none)" })
     if (arr.length === 0) { root.lastError = "Pick at least one layout"; return }
-    if (!root.hotkeyMap[hk]) { root.lastError = "Unknown hotkey: " + hk; return }
-
-    backupOnce()
-
-    var t = String(luaFile.text() || "")
-    var optParts = [root.hotkeyMap[hk]]
-    if (useLed && hk === "caps") optParts.push("grp_led:caps")
-    var layRe = /(kb_layout\s*=\s*)"([^"]*)"/
-    var optRe = /(kb_options\s*=\s*)"([^"]*)"/
-    var replacedLay = layRe.test(t)
-    var replacedOpt = optRe.test(t)
-    if (replacedLay) t = t.replace(layRe, "$1\"" + arr.join(",") + "\"")
-    if (replacedOpt) t = t.replace(optRe, "$1\"" + optParts.join(",") + "\"")
-    // Missing lines get appended as a second hl.config block; Hyprland merges them.
-    if (!replacedLay || !replacedOpt) {
-      t += "\nhl.config({\n  input = {\n" +
-        (replacedLay ? "" : "    kb_layout = \"" + arr.join(",") + "\",\n") +
-        (replacedOpt ? "" : "    kb_options = \"" + optParts.join(",") + "\",\n") +
-        "  },\n})\n"
+    if (!Object.prototype.hasOwnProperty.call(root.hotkeyMap, hk)) {
+      root.lastError = "Unknown hotkey: " + hk
+      return
+    }
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i].length > Logic.MAX_LAYOUT_NAME_CHARS
+          || !/^[A-Za-z0-9_+-]+$/.test(arr[i])) {
+        root.lastError = "Invalid layout name"
+        return
+      }
     }
 
+    var optParts = [root.hotkeyMap[hk]]
+    if (useLed && hk === "caps") optParts.push("grp_led:caps")
     root.lastError = ""
-    luaFile.setText(t)
-    root.lastAction = "Saved to input.lua — reloading Hyprland…"
-    reloadTimer.restart()
+    root.lastAction = "Saving input.lua…"
+    inputWriteProc.command = ["/usr/bin/perl", root.writeInputScriptPath,
+      root.inputLuaPath, String(Logic.INPUT_MAX_BYTES),
+      arr.join(","), optParts.join(",")]
+    inputWriteProc.running = true
   }
 
   function nextLayout() {
@@ -195,34 +304,41 @@ Item {
   }
 
   FileView {
-    id: luaFile
     path: root.inputLuaPath
+    preload: false
+    blockAllReads: true
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyLua(text())
-    onLoadFailed: root.applyLua("")
-    onFileChanged: reload()
+    onFileChanged: root.requestInputRead()
   }
 
   FileView {
     id: configFile
-    path: root.configDir + "/config.json"
-    watchChanges: false
+    path: ""
+    preload: false
+    blockAllReads: true
+    watchChanges: true
     printErrors: false
-    onLoaded: {
-      var c = {}
-      try { c = JSON.parse(text()) || {} } catch (e) { c = {} }
-      root.placement = c.placement === "center" ? "center" : "right"
-      root.askedState = c.asked === true ? 1 : -1
+    atomicWrites: true
+    onFileChanged: root.requestConfigRead()
+    onSaveFailed: function (error) {
+      root.lastError = "Could not save config.json (" + error + ")"
     }
-    onLoadFailed: root.askedState = -1
   }
 
   Process {
     id: placeProc
     onExited: function (exitCode) {
-      if (exitCode !== 0)
+      var section = root.pendingPlacement
+      root.pendingPlacement = ""
+      if (exitCode !== 0) {
         root.lastPlaceAction = "omarchy bar move failed (" + exitCode + ")"
+        return
+      }
+      root.placement = section
+      root.saveConfig()
+      root.lastPlaceAction = "Moved to " + section + " — reloading Hyprland & shell…"
+      placeReloadTimer.restart()
     }
   }
 
@@ -242,19 +358,82 @@ Item {
   Process {
     id: configDirProc
     command: ["mkdir", "-p", root.configDir]
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        root.askedState = -1
+        root.lastError = "Could not create keyboard-layout config directory"
+        return
+      }
+      configFile.path = root.configPath
+      root.requestConfigRead()
+    }
   }
 
   Process {
-    id: bakProc
+    id: inputReadProc
+    command: ["/usr/bin/perl", root.boundedReadScriptPath,
+      root.inputLuaPath, String(Logic.INPUT_MAX_BYTES)]
+    stdout: StdioCollector {
+      id: inputReadOutput
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: inputReadError
+      waitForEnd: true
+    }
+    onExited: function (exitCode) { root.onInputReadExited(exitCode) }
+  }
+
+  Process {
+    id: configReadProc
+    command: ["/usr/bin/perl", root.boundedReadScriptPath,
+      root.configPath, String(Logic.CONFIG_MAX_BYTES)]
+    stdout: StdioCollector {
+      id: configReadOutput
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: configReadError
+      waitForEnd: true
+    }
+    onExited: function (exitCode) { root.onConfigReadExited(exitCode) }
+  }
+
+  Process {
+    id: inputWriteProc
+    stderr: StdioCollector {
+      id: inputWriteError
+      waitForEnd: true
+    }
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        root.lastError = "Could not save input.lua: "
+          + root.readFailure(inputWriteError.text, "safe write failed")
+        root.lastAction = ""
+        Qt.callLater(root.requestInputRead)
+        return
+      }
+      root.lastError = ""
+      root.lastAction = "Saved to input.lua — reloading Hyprland…"
+      Qt.callLater(root.requestInputRead)
+      reloadTimer.restart()
+    }
   }
 
   Process {
     id: devicesProc
-    command: ["hyprctl", "-j", "devices"]
+    command: ["/usr/bin/timeout", "5", "/usr/bin/perl",
+      root.boundedExecScriptPath, String(Logic.DEVICES_MAX_BYTES),
+      "hyprctl", "-j", "devices"]
     stdout: StdioCollector {
+      id: devicesOutput
       waitForEnd: true
-      onStreamFinished: root.applyDevices(text)
     }
+    stderr: StdioCollector {
+      id: devicesError
+      waitForEnd: true
+    }
+    onExited: function (exitCode) { root.onDevicesExited(exitCode) }
   }
 
   Process {
@@ -263,24 +442,26 @@ Item {
 
   Process {
     id: briefsProc
-    command: ["xkbcli", "list", "--load-exotic"]
+    command: ["/usr/bin/timeout", "10", "/usr/bin/perl",
+      root.boundedExecScriptPath, String(Logic.XKB_MAX_BYTES),
+      "xkbcli", "list", "--load-exotic"]
     stdout: StdioCollector {
+      id: briefsOutput
       waitForEnd: true
-      onStreamFinished: {
-        // xkbcli prints YAML pairing brief + description inside each block;
-        // a brief never carries past its block.
-        var briefs = {}
-        var brief = ""
-        String(text || "").split("\n").forEach(function (line) {
-          if (/^\s*- /.test(line)) brief = ""
-          var field = line.match(/^  (brief|description): (.*)$/)
-          if (!field) return
-          if (field[1] === "brief") brief = field[2].replace(/^'|'$/g, "")
-          else if (brief !== "") { briefs[field[2]] = brief; brief = "" }
-        })
-        root.layoutBriefs = briefs
-        root.currentAbbr = root.shortLabel(root.currentKeymap)
+    }
+    stderr: StdioCollector {
+      id: briefsError
+      waitForEnd: true
+    }
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        console.warn("keyboard-layout", "xkbcli output rejected:",
+          root.readFailure(briefsError.text, "bounded producer failed"))
+        return
       }
+      var result = root.applyBriefs(briefsOutput.text)
+      if (!result.ok)
+        console.warn("keyboard-layout", "xkbcli output rejected:", result.error)
     }
   }
 
@@ -317,6 +498,7 @@ Item {
   }
 
   Component.onCompleted: {
+    root.requestInputRead()
     root.refresh()
     if (!briefsProc.running) briefsProc.running = true
     configDirProc.running = true
