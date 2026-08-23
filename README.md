@@ -8,6 +8,8 @@ The bar glyph is your live layout abbreviation (`EN`, `GR`, `PT`…):
 - **Right-click** — switch to the next layout immediately.
 - **Hover** — tooltip with the full keymap name.
 
+<img width="453" height="843" alt="image" src="https://github.com/user-attachments/assets/7608a4ce-e7b4-445d-b0f7-2dfd2196d78e" />
+
 ## Features
 
 - **Language agnostic**: pick any two layouts from xkb's own table (`us`, `gr`, `de`, `jp`, `ara`, …) with short labels read from `xkbcli list --load-exotic`.
