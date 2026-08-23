@@ -19,7 +19,7 @@ The bar glyph is your live layout abbreviation (`EN`, `GR`, `PT`…):
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/Somnius/Omarchy-Keyboard-Layout.git --enable
+omarchy plugin add https://github.com/Somnius/Keyboard-Layout-for-Omarchy.git --enable
 ```
 
 The widget starts on the right side of the bar; the first-run panel asks whether to keep it there or move it next to the clock.

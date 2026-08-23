@@ -10,7 +10,7 @@ Item {
   readonly property string inputLuaPath: home + "/.config/hypr/input.lua"
   readonly property string configDir: home + "/.config/omarchy/keyboard-layout"
   readonly property string moduleId: "lef.keyboard-layout"
-  readonly property string repoUrl: "https://github.com/Somnius/Omarchy-Keyboard-Layout"
+  readonly property string repoUrl: "https://github.com/Somnius/Keyboard-Layout-for-Omarchy"
 
   // Parsed from ~/.config/hypr/input.lua
   property var layouts: []
