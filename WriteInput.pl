@@ -130,13 +130,32 @@ my $utf8_source = $original;
 my $text = eval { decode("UTF-8", $utf8_source, FB_CROAK) };
 defined($text) or fail(7, "input is not valid UTF-8");
 
-my $replaced_layout = $text =~ s/(kb_layout\s*=\s*)"[^"]*"/$1"$layouts"/;
-my $replaced_options = $text =~ s/(kb_options\s*=\s*)"[^"]*"/$1"$options"/;
+my $replaced_layout = 0;
+my $replaced_options = 0;
+my @lines = split /(?<=\n)/, $text;
+for my $line (@lines) {
+  next if $line =~ /^[ \t]*--/;
+  $replaced_layout = 1
+    if $line =~ s/(kb_layout\s*=\s*)"[^"]*"/$1"$layouts"/;
+  $replaced_options = 1
+    if $line =~ s/(kb_options\s*=\s*)"[^"]*"/$1"$options"/;
+}
+$text = join "", @lines;
+
 if (!$replaced_layout || !$replaced_options) {
-  $text .= "\nhl.config({\n  input = {\n";
-  $text .= "    kb_layout = \"$layouts\",\n" unless $replaced_layout;
-  $text .= "    kb_options = \"$options\",\n" unless $replaced_options;
-  $text .= "  },\n})\n";
+  my $marker_begin = "-- lef.keyboard-layout: managed block (edited via the panel)\n";
+  my $marker_end = "-- lef.keyboard-layout: end managed block\n";
+  my $block = $marker_begin . "hl.config({\n  input = {\n";
+  $block .= "    kb_layout = \"$layouts\",\n" unless $replaced_layout;
+  $block .= "    kb_options = \"$options\",\n" unless $replaced_options;
+  $block .= "  },\n})\n" . $marker_end;
+
+  my $block_pattern = quotemeta($marker_begin) . '.*?' . quotemeta($marker_end);
+  if ($text =~ /$block_pattern/s) {
+    $text =~ s/$block_pattern/$block/s;
+  } else {
+    $text .= "\n" . $block;
+  }
 }
 
 my $updated = encode("UTF-8", $text, FB_CROAK);

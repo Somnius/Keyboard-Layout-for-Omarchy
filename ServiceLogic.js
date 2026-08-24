@@ -19,8 +19,13 @@ var MAX_BRIEF_CHARS = 64
 var MAX_DESCRIPTION_CHARS = 256
 
 // These devices carry the seat layout and answer switchxkblayout, but are not
-// keyboards a user types on (same exclusions as Omarchy's first-party widget).
-var untypedKeyboard = /^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus)/
+// keyboards a user types on (same exclusions as Omarchy's first-party widget,
+// plus the ACPI/WMI hotkey pseudo-keyboards Linux exposes as "*-hid-events"
+// and "*-extra-buttons" on many laptops, e.g. Intel's intel-hid driver or
+// ThinkPad's extra buttons. Left unexcluded, one of these can outrank the
+// real keyboard's layout index and hijack both the display and the switch
+// command, leaving next/prev with no visible effect on what you actually type.
+var untypedKeyboard = /^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus|[\w-]*-hid-events|[\w-]*-extra-buttons)/
 var controls = /[\u0000-\u001f\u007f]/
 
 function success(value) {

@@ -93,6 +93,40 @@ TestCase {
     }] })).ok)
   }
 
+  function acpiHotkeyDevices() {
+    return JSON.stringify({
+      keyboards: [
+        {
+          name: "intel-hid-events",
+          active_keymap: "Swedish",
+          active_layout_index: 1
+        },
+        {
+          name: "thinkpad-extra-buttons",
+          active_keymap: "Swedish",
+          active_layout_index: 1
+        },
+        {
+          name: "at-translated-set-2-keyboard",
+          active_keymap: "English (US)",
+          active_layout_index: 0
+        },
+        {
+          name: "hl-virtual-keyboard-fcitx5",
+          active_keymap: "English (US)",
+          active_layout_index: 0
+        }
+      ]
+    })
+  }
+
+  function test_acpiHotkeyDevicesDoNotOutrankTheRealKeyboard() {
+    var result = Logic.parseDevices(acpiHotkeyDevices())
+    verify(result.ok)
+    compare(result.value.keyboardName, "at-translated-set-2-keyboard")
+    compare(result.value.currentKeymap, "English (US)")
+  }
+
   function test_rejectedDeviceDataCannotReplaceLastGood() {
     var state = { keyboardName: "old", currentKeymap: "Old keymap" }
     var good = Logic.parseDevices(validDevices())

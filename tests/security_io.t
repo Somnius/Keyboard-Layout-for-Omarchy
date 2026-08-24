@@ -183,4 +183,61 @@ LUA
   is(get_raw($invalid), "\xff", "invalid input stays untouched");
 };
 
+subtest "default Omarchy template with commented-out settings" => sub {
+  my $input = File::Spec->catfile($dir, "template-input.lua");
+  my $template = <<'LUA';
+-- Keyboard layout and options.
+-- hl.config({
+--   input = {
+--     kb_layout = "us,se",
+--     kb_options = "grp:alt_shift_toggle",
+--   },
+-- })
+LUA
+  put_raw($input, $template);
+
+  my ($exit) = run_command(
+    $^X, $writer, $input, "262144", "de,fr", "grp:alt_shift_toggle"
+  );
+  is($exit, 0, "writes settings against a fully-commented template");
+
+  my $after = get_raw($input);
+  like(
+    $after,
+    qr/^--\s*kb_layout = "us,se",$/m,
+    "leaves the commented-out example line untouched"
+  );
+  like(
+    $after,
+    qr/^hl\.config\(\{$/m,
+    "appends a new, active hl.config block"
+  );
+  like($after, qr/kb_layout = "de,fr"/, "active block carries the new layout");
+  like(
+    $after,
+    qr/kb_options = "grp:alt_shift_toggle"/,
+    "active block carries the new options"
+  );
+
+  my ($exit2) = run_command(
+    $^X, $writer, $input, "262144", "us,pt", "grp:ctrl_shift_toggle"
+  );
+  is($exit2, 0, "allows a second apply against the same file");
+
+  my $reapplied = get_raw($input);
+  my @active_blocks = ($reapplied =~ /^hl\.config\(\{$/mg);
+  is(scalar(@active_blocks), 1, "does not stack a second managed block");
+  like($reapplied, qr/kb_layout = "us,pt"/, "second apply updates the layout");
+  like(
+    $reapplied,
+    qr/kb_options = "grp:ctrl_shift_toggle"/,
+    "second apply updates the options"
+  );
+  like(
+    $reapplied,
+    qr/^--\s*kb_layout = "us,se",$/m,
+    "commented-out example line is still untouched after a second apply"
+  );
+};
+
 done_testing();
