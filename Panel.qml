@@ -24,7 +24,7 @@ Panel {
     "ru", "tr", "ara", "jp", "kr", "cn", "il"
   ]
   readonly property var secondChoices: ["(none)"].concat(layoutChoices)
-  readonly property var hotkeyChoices: ["caps", "alt+shift", "ctrl+shift"]
+  readonly property var hotkeyChoices: ["caps", "both alts", "alt+shift", "ctrl+shift"]
 
   // Panel-local selection state, seeded from the service.
   property string primarySel: ""

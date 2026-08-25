@@ -96,10 +96,17 @@ $layouts =~ /\A[A-Za-z0-9_+-]+(?:,[A-Za-z0-9_+-]+){0,31}\z/
   && length($layouts) <= 2048
   or fail(64, "invalid layouts");
 my %allowed_options = map { $_ => 1 } (
+  # Bare forms, kept so an older config still round-trips.
   "grp:caps_toggle",
   "grp:caps_toggle,grp_led:caps",
   "grp:alt_shift_toggle",
   "grp:ctrl_shift_toggle",
+  # Forms that carry Omarchy's stock options through an Apply.
+  "shift:both_capslock_cancel,grp:caps_toggle",
+  "shift:both_capslock_cancel,grp:caps_toggle,grp_led:caps",
+  "compose:caps,shift:both_capslock_cancel,grp:alts_toggle",
+  "compose:caps,shift:both_capslock_cancel,grp:alt_shift_toggle",
+  "compose:caps,shift:both_capslock_cancel,grp:ctrl_shift_toggle",
 );
 $allowed_options{$options} or fail(64, "invalid options");
 

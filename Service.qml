@@ -85,14 +85,23 @@ Item {
 
   readonly property var hotkeyMap: {
     "caps": "grp:caps_toggle",
+    "both alts": "grp:alts_toggle",
     "alt+shift": "grp:alt_shift_toggle",
     "ctrl+shift": "grp:ctrl_shift_toggle"
   }
   readonly property var hotkeyLabels: {
     "caps": "Caps Lock",
+    "both alts": "Both Alts",
     "alt+shift": "Alt+Shift",
     "ctrl+shift": "Ctrl+Shift"
   }
+
+  // Omarchy's stock kb_options. Applying a hotkey must not silently drop these
+  // — compose:caps puts Compose on Caps Lock and shift:both_capslock_cancel
+  // keeps a misfired Caps Lock self-clearing. The caps_toggle variant has to
+  // give up compose:caps, since Caps Lock cannot be Compose and the toggle.
+  readonly property string omarchyBaseOptions: "compose:caps,shift:both_capslock_cancel"
+  readonly property string omarchyBaseOptionsNoCompose: "shift:both_capslock_cancel"
 
   function shortLabel(description) {
     if (!description) return ""
@@ -277,7 +286,9 @@ Item {
       }
     }
 
-    var optParts = [root.hotkeyMap[hk]]
+    var optParts = [hk === "caps" ? root.omarchyBaseOptionsNoCompose
+                                  : root.omarchyBaseOptions,
+                    root.hotkeyMap[hk]]
     if (useLed && hk === "caps") optParts.push("grp_led:caps")
     root.lastError = ""
     root.lastAction = "Saving input.lua…"

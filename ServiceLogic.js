@@ -88,7 +88,8 @@ function parseLua(text) {
     return failure("input.lua kb_options is too long or contains control characters")
 
   var hotkey = "caps"
-  if (/alt_shift_toggle/.test(options)) hotkey = "alt+shift"
+  if (/grp:alts_toggle/.test(options)) hotkey = "both alts"
+  else if (/alt_shift_toggle/.test(options)) hotkey = "alt+shift"
   else if (/ctrl_shift_toggle/.test(options)) hotkey = "ctrl+shift"
 
   return success({
