@@ -183,4 +183,53 @@ LUA
   is(get_raw($invalid), "\xff", "invalid input stays untouched");
 };
 
+subtest "option allowlist" => sub {
+  my $original = <<'LUA';
+hl.config({
+  input = {
+    kb_layout = "us,gr",
+    kb_options = "grp:caps_toggle",
+  },
+})
+LUA
+
+  my @accepted = (
+    "grp:caps_toggle",
+    "grp:caps_toggle,grp_led:caps",
+    "grp:alt_shift_toggle",
+    "grp:ctrl_shift_toggle",
+    "shift:both_capslock_cancel,grp:caps_toggle",
+    "shift:both_capslock_cancel,grp:caps_toggle,grp_led:caps",
+    "compose:caps,shift:both_capslock_cancel,grp:alts_toggle",
+    "compose:caps,shift:both_capslock_cancel,grp:alt_shift_toggle",
+    "compose:caps,shift:both_capslock_cancel,grp:ctrl_shift_toggle",
+  );
+  my $index = 0;
+  for my $options (@accepted) {
+    my $input = File::Spec->catfile($dir, "allow-" . $index++ . ".lua");
+    put_raw($input, $original);
+    my ($exit) = run_command($^X, $writer, $input, "262144", "us,it", $options);
+    is($exit, 0, "accepts $options");
+    like(get_raw($input), qr/\Qkb_options = "$options"\E/, "writes $options verbatim");
+  }
+
+  # The allowlist is exact-match on purpose: near-misses and injection
+  # attempts must not slip through on a substring.
+  my @rejected = (
+    "grp:alts_toggle",                                   # bare form is not offered
+    "grp:evil_toggle",
+    "compose:caps,grp:alts_toggle",                      # wrong stock prefix
+    "compose:caps,shift:both_capslock_cancel,grp:alts_toggle,grp_led:caps",
+    'grp:caps_toggle" } }) os.execute("touch /tmp/pwn',  # lua break-out
+    "",
+  );
+  for my $options (@rejected) {
+    my $input = File::Spec->catfile($dir, "deny-" . $index++ . ".lua");
+    put_raw($input, $original);
+    my ($exit) = run_command($^X, $writer, $input, "262144", "us,it", $options);
+    isnt($exit, 0, "rejects '$options'");
+    is(get_raw($input), $original, "leaves input.lua untouched for '$options'");
+  }
+};
+
 done_testing();

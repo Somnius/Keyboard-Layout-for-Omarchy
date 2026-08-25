@@ -42,6 +42,32 @@ TestCase {
     verify(!Logic.parseLua('kb_layout = "' + tooMany.join(",") + '"').ok)
   }
 
+  function test_hotkeyRoundTrip() {
+    // Every option the panel can write must read back as the same key,
+    // otherwise the dropdown shows a hotkey the user is not actually pressing.
+    var cases = [
+      ["grp:caps_toggle", "caps"],
+      ["grp:alts_toggle", "both alts"],
+      ["grp:alt_shift_toggle", "alt+shift"],
+      ["grp:ctrl_shift_toggle", "ctrl+shift"],
+      // Omarchy's stock options ride along in front of the toggle.
+      ["compose:caps,shift:both_capslock_cancel,grp:alts_toggle", "both alts"],
+      ["compose:caps,shift:both_capslock_cancel,grp:alt_shift_toggle", "alt+shift"],
+      ["compose:caps,shift:both_capslock_cancel,grp:ctrl_shift_toggle", "ctrl+shift"],
+      ["shift:both_capslock_cancel,grp:caps_toggle", "caps"]
+    ]
+    for (var i = 0; i < cases.length; i++) {
+      var parsed = Logic.parseLua(
+        'kb_layout = "us,it"\nkb_options = "' + cases[i][0] + '"')
+      verify(parsed.ok)
+      compare(parsed.value.hotkey, cases[i][1], cases[i][0])
+    }
+
+    // alts_toggle must not be mistaken for alt_shift_toggle, or vice versa.
+    compare(Logic.parseLua('kb_options = "grp:alts_toggle"').value.hotkey, "both alts")
+    compare(Logic.parseLua('kb_options = "grp:alt_shift_toggle"').value.hotkey, "alt+shift")
+  }
+
   function test_rejectedLuaCannotReplaceLastGood() {
     var state = Logic.parseLua('kb_layout = "us,gr"\nkb_options = "grp:caps_toggle"').value
     var bad = Logic.parseLua('kb_layout = "us\nbad"')

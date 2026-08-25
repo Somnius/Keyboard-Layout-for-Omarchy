@@ -13,6 +13,7 @@ The bar glyph is your live layout abbreviation (`EN`, `GR`, `PT`…):
 ## Features
 
 - **Language agnostic**: pick any two layouts from xkb's own table (`us`, `gr`, `de`, `jp`, `ara`, …) with short labels read from `xkbcli list --load-exotic`.
+- **Both Alts supported**: `grp:alts_toggle` (Left Alt + Right Alt) is the chord Omarchy itself installs for non-Latin layouts, so a stock setup reads back correctly instead of falling through to `caps`.
 - **Placement choice**: on first run the plugin asks where the widget should live — `center` (parked right after the clock) or `right`. The left section is never offered. Change it any time from the panel; moving triggers a Hyprland + shell reload so the bar settles cleanly.
 - **Switches the keyboard you actually type on**: reads `hyprctl devices -j`, filters out virtual/injected keyboards (fcitx5's seat keyboard, ACPI buttons), and follows the furthest-advanced typed device — the same logic as Omarchy's first-party widget.
 - **Caps LED indicator** when using Caps Lock as the toggle (`grp_led:caps`).
@@ -53,7 +54,12 @@ Target file: `~/.config/hypr/input.lua`
 | Key | Values | Notes |
 |---|---|---|
 | `input.kb_layout` | comma-separated xkb layouts | e.g. `"us,gr"` |
-| `input.kb_options` | `grp:caps_toggle` \| `grp:alt_shift_toggle` \| `grp:ctrl_shift_toggle` (+ `grp_led:caps`) | Super+Space is deliberately not offered — Omarchy reserves it for the launcher |
+| `input.kb_options` | `grp:caps_toggle` \| `grp:alts_toggle` \| `grp:alt_shift_toggle` \| `grp:ctrl_shift_toggle` (+ `grp_led:caps`) | Super+Space is deliberately not offered — Omarchy reserves it for the launcher |
+
+Omarchy's own stock options (`compose:caps`, `shift:both_capslock_cancel`) are
+carried through an *Apply* rather than replaced, so Compose stays on Caps Lock.
+The one exception is the `Caps Lock` hotkey, which has to give up `compose:caps`
+— Caps Lock cannot be both the Compose key and the layout toggle.
 
 Plugin state: `~/.config/omarchy/keyboard-layout/config.json`
 
