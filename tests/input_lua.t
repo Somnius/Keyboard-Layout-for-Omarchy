@@ -285,6 +285,30 @@ subtest "rotating backups" => sub {
     or diag(join("\n", map { "$_: " . (get_raw("$backups/$_") =~ /kb_layout = "(\w+)"/)[0] } @names));
 };
 
+subtest "manual backup" => sub {
+  my ($input, $backups) = fixture($omarchy_template);
+  my ($exit, $out) = run_tool("backup", $input, $limit, $backups);
+  is($exit, 0, "manual backup succeeds");
+  my $result = decode_json($out);
+  ok($result->{created}, "reports a new backup");
+  like($result->{id}, qr/\Ainput\.lua\.[0-9]{8}-[0-9]{6}\z/, "reports its id");
+  is(get_raw("$backups/$result->{id}"), $omarchy_template, "holds the exact bytes");
+  is(get_raw($input), $omarchy_template, "input.lua is not touched");
+
+  ($exit, $out) = run_tool("backup", $input, $limit, $backups);
+  is($exit, 0, "a repeat succeeds");
+  ok(!decode_json($out)->{created}, "but makes no duplicate of unchanged bytes");
+  is(count_rotating($backups), 1, "still one backup");
+
+  my ($absent, $absent_backups) = fixture(undef);
+  ($exit) = run_tool("backup", $absent, $limit, $absent_backups);
+  is($exit, 2, "nothing to back up when input.lua is missing");
+
+  my ($invalid, $invalid_backups) = fixture("\xff");
+  ($exit) = run_tool("backup", $invalid, $limit, $invalid_backups);
+  is($exit, 7, "refuses to store invalid UTF-8");
+};
+
 subtest "backup listing and restore" => sub {
   my ($input, $backups) = fixture($omarchy_template);
   my $original_bak = "$input.bak.1787432230";
@@ -293,12 +317,19 @@ subtest "backup listing and restore" => sub {
   write_settings($input, $backups, "it", "", "grp:caps_toggle");
 
   my ($exit, $out) = run_tool("backups", $input, $limit, $backups);
+  my ($vinput, $vbackups) = fixture($omarchy_template);
+  write_settings($vinput, $vbackups, "us,gr", ",polytonic", "grp:caps_toggle");
+  write_settings($vinput, $vbackups, "us", "", "grp:caps_toggle");
+  my (undef, $vout) = run_tool("backups", $vinput, $limit, $vbackups);
+  is(decode_json($vout)->[0]{layouts}, "us,gr(polytonic)", "summaries include variants");
   is($exit, 0, "listing succeeds");
   my $rows = decode_json($out);
   is(scalar(@$rows), 3, "lists rotating and original backups");
   my ($orig) = grep { $_->{kind} eq "original" } @$rows;
   is($orig->{id}, "input.lua.bak.1787432230", "original backup listed by name");
   is($orig->{layouts}, "us,gr", "original backup summarised");
+  my ($rot) = grep { $_->{kind} eq "rotating" && $_->{layouts} =~ /de/ } @$rows;
+  is($rot->{layouts}, "de,fr", "rotating backup summarised");
   ok($orig->{valid}, "original backup is restorable");
 
   for my $id ("../input.lua", "input.lua", "input.lua.bak.x", "/etc/passwd",

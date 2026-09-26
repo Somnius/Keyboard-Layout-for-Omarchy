@@ -4,6 +4,7 @@
 #
 #   InputLua.pl read    PATH MAX_BYTES
 #   InputLua.pl write   PATH MAX_BYTES BACKUP_DIR LAYOUTS VARIANTS GROUP_OPTIONS
+#   InputLua.pl backup  PATH MAX_BYTES BACKUP_DIR
 #   InputLua.pl backups PATH MAX_BYTES BACKUP_DIR
 #   InputLua.pl restore PATH MAX_BYTES BACKUP_DIR BACKUP_ID
 #
@@ -299,7 +300,7 @@ sub rotate_backup {
     if ($newest) {
       my $same = read_bounded($newest, $max_bytes) eq $bytes;
       close($newest);
-      return if $same;
+      return undef if $same;
     }
   }
 
@@ -328,6 +329,7 @@ sub rotate_backup {
     my @metadata = lstat("$directory/$oldest");
     unlink("$directory/$oldest") if @metadata && S_ISREG($metadata[2]);
   }
+  return $name;
 }
 
 # Atomically replaces PATH with BYTES, provided the file still is exactly the
@@ -476,6 +478,22 @@ sub command_write {
   replace_input($path, $max, $source, $metadata, $original, $updated);
 }
 
+# A manual backup: the same rotating store, the same checks, no write to
+# input.lua. Prints {"created":bool,"id":...}.
+sub command_backup {
+  @ARGV == 3 or fail(64, "usage: InputLua.pl backup PATH MAX_BYTES BACKUP_DIR");
+  my ($path, $max, $backup_dir) = ($ARGV[0], byte_limit($ARGV[1]), $ARGV[2]);
+  my ($source, undef, $bytes) = load_input($path, $max);
+  $source or fail(2, "input does not exist");
+  decode_utf8($bytes, "input");
+  close($source);
+  my $id = rotate_backup($backup_dir, $bytes, $max);
+  emit_json({
+    created => defined($id) ? JSON::PP::true : JSON::PP::false,
+    id => $id // "",
+  });
+}
+
 sub backup_path_for {
   my ($path, $backup_dir, $id) = @_;
   return ("$backup_dir/$id", "rotating") if $id =~ $ROTATING_ID_RE;
@@ -496,7 +514,10 @@ sub describe_backup {
     kind => $kind,
     time => $metadata->[9],
     size => $metadata->[7],
-    layouts => $settings ? join(",", @{$settings->{layouts}}) : "",
+    layouts => $settings ? join(",", map {
+      my $variant = $settings->{variants}[$_];
+      $settings->{layouts}[$_] . ($variant ne "" ? "($variant)" : "")
+    } 0 .. $#{$settings->{layouts}}) : "",
     valid => $settings ? JSON::PP::true : JSON::PP::false,
   };
 }
@@ -537,9 +558,10 @@ sub command_restore {
 my %commands = (
   read => \&command_read,
   write => \&command_write,
+  backup => \&command_backup,
   backups => \&command_backups,
   restore => \&command_restore,
 );
 my $command = shift(@ARGV) // "";
-$commands{$command} or fail(64, "usage: InputLua.pl read|write|backups|restore ...");
+$commands{$command} or fail(64, "usage: InputLua.pl read|write|backup|backups|restore ...");
 $commands{$command}->();

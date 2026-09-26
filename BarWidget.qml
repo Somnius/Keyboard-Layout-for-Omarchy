@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -13,6 +12,8 @@ BarWidget {
   readonly property bool ready: service !== null && service.loaded
   readonly property string displayName: ready && service.currentAbbr !== ""
     ? service.currentAbbr : "⌨"
+  readonly property color baseColor: root.bar ? root.bar.barForeground : Color.foreground
+  readonly property bool highlighted: ready && service.highlightEnabled && !service.onMainLayout
 
   implicitWidth: glyph.implicitWidth + Style.space(12)
   implicitHeight: barSize
@@ -30,15 +31,33 @@ BarWidget {
     target.service = root.service
   }
 
+  // The screen this bar sits on, so the service's IPC can open the panel on
+  // the focused monitor when several bars carry the widget.
+  readonly property string screenName: root.QsWindow.window && root.QsWindow.window.screen
+    ? root.QsWindow.window.screen.name : ""
+  property var registeredWith: null
+
+  function register() {
+    if (root.registeredWith === root.service) return
+    if (root.registeredWith) root.registeredWith.unregisterPanelHost(root)
+    root.registeredWith = root.service
+    if (root.service) root.service.registerPanelHost(root)
+  }
+
   onBarChanged: injectPanel()
-  onServiceChanged: injectPanel()
+  onServiceChanged: {
+    injectPanel()
+    register()
+  }
+  Component.onCompleted: register()
+  Component.onDestruction: if (root.registeredWith) root.registeredWith.unregisterPanelHost(root)
 
   Text {
     id: glyph
     anchors.centerIn: parent
     text: root.displayName
     textFormat: Text.PlainText
-    color: root.bar ? root.bar.barForeground : Color.foreground
+    color: root.highlighted ? Color.accent : root.baseColor
     font.family: root.bar ? root.bar.fontFamily : Style.font.family
     font.pixelSize: Style.font.body
     opacity: root.ready ? 1 : 0.45
@@ -52,16 +71,26 @@ BarWidget {
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+
+    // A wheel notch or touchpad swipe yields a burst of events; switch at
+    // most once per burst window so one flick is one layout.
+    property real lastWheel: 0
 
     onClicked: function (mouse) {
       if (!root.ready) return
-      if (mouse.button === Qt.RightButton) {
-        // Switch immediately, no panel.
-        root.service.nextLayout()
-      } else {
-        root.toggle()
-      }
+      if (mouse.button === Qt.RightButton) root.service.nextLayout()
+      else if (mouse.button === Qt.MiddleButton) root.service.mainLayout()
+      else root.toggle()
+    }
+    onWheel: function (wheel) {
+      if (!root.ready) return
+      var delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+      var now = Date.now()
+      if (delta === 0 || now - lastWheel < 150) return
+      lastWheel = now
+      if (delta < 0) root.service.nextLayout()
+      else root.service.prevLayout()
     }
     onEntered: if (root.bar) root.bar.showTooltip(root,
       root.ready && service.currentKeymap !== "" ? service.currentKeymap : "Keyboard Layout")
@@ -84,33 +113,5 @@ BarWidget {
     interval: 1500
     running: root.ready && root.service.askedState === -1
     onTriggered: if (root.service.askedState === -1) root.open()
-  }
-
-  IpcHandler {
-    target: root.moduleName
-
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function next(): void { if (root.ready) root.service.nextLayout() }
-    function place(section: string): string {
-      if (!root.ready) return "service not ready"
-      if (section !== "center" && section !== "right") return "use center or right"
-      root.service.place(section)
-      return "moving to " + section
-    }
-    function status(): string {
-      if (!root.ready) return "service not ready"
-      return JSON.stringify({
-        keyboard: root.service.keyboardName,
-        keymap: root.service.currentKeymap,
-        abbr: root.service.currentAbbr,
-        layouts: root.service.layouts,
-        hotkey: root.service.hotkey,
-        led: root.service.led,
-        placement: root.service.placement,
-        askedState: root.service.askedState
-      })
-    }
   }
 }

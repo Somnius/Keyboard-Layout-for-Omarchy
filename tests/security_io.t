@@ -13,7 +13,6 @@ use Test::More;
 my $repo = abs_path(File::Spec->catdir($FindBin::Bin, ".."));
 my $reader = File::Spec->catfile($repo, "BoundedRead.pl");
 my $runner = File::Spec->catfile($repo, "BoundedExec.pl");
-my $writer = File::Spec->catfile($repo, "WriteInput.pl");
 my $dir = tempdir(CLEANUP => 1);
 
 sub put_raw {
@@ -56,11 +55,6 @@ sub run_command {
   unlink($stdout_path, $stderr_path);
   my $exit = $status & 127 ? 128 + ($status & 127) : $status >> 8;
   return ($exit, $out, $err);
-}
-
-sub backup_paths {
-  my ($path) = @_;
-  return sort grep { -f $_ } glob("$path.bak.*");
 }
 
 subtest "bounded descriptor reader" => sub {
@@ -119,68 +113,6 @@ subtest "bounded producer wrapper" => sub {
   );
   isnt($exit, 0, "rejects invalid producer UTF-8");
   is($out, "", "suppresses invalid producer bytes");
-};
-
-subtest "explicit input writer and backup ordering" => sub {
-  my $input = File::Spec->catfile($dir, "input.lua");
-  my $original = <<'LUA';
-hl.config({
-  input = {
-    kb_layout = "us,gr",
-    kb_options = "grp:caps_toggle,grp_led:caps",
-  },
-})
-LUA
-  put_raw($input, $original);
-  chmod(0640, $input) or die "chmod input: $!";
-
-  my ($exit) = run_command(
-    $^X, $writer, $input, "262144", "de,fr", "grp:alt_shift_toggle"
-  );
-  is($exit, 0, "writes valid explicit settings");
-  like(get_raw($input), qr/kb_layout = "de,fr"/, "replaces the layouts");
-  like(get_raw($input), qr/kb_options = "grp:alt_shift_toggle"/, "replaces the options");
-  is((stat($input))[2] & 0777, 0640, "preserves input permissions");
-  my @backups = backup_paths($input);
-  is(scalar(@backups), 1, "creates one backup before the first replacement");
-  is(get_raw($backups[0]), $original, "backup contains the exact original bytes");
-
-  ($exit) = run_command(
-    $^X, $writer, $input, "262144", "us,pt", "grp:ctrl_shift_toggle"
-  );
-  is($exit, 0, "allows a later explicit write");
-  my @later_backups = backup_paths($input);
-  is(scalar(@later_backups), 1, "does not replace or multiply the one-time backup");
-
-  my $unwritable = File::Spec->catdir($dir, "unwritable");
-  mkdir($unwritable, 0700) or die "mkdir unwritable: $!";
-  my $blocked = File::Spec->catfile($unwritable, "input.lua");
-  put_raw($blocked, $original);
-  chmod(0500, $unwritable) or die "chmod directory: $!";
-  ($exit) = run_command(
-    $^X, $writer, $blocked, "262144", "de,fr", "grp:alt_shift_toggle"
-  );
-  chmod(0700, $unwritable) or die "restore directory: $!";
-  isnt($exit, 0, "aborts when the required backup cannot be created");
-  is(get_raw($blocked), $original, "backup failure leaves input.lua untouched");
-
-  my $linked = File::Spec->catfile($dir, "linked-input.lua");
-  my $linked_target = File::Spec->catfile($dir, "linked-target.lua");
-  put_raw($linked_target, $original);
-  symlink($linked_target, $linked) or die "input symlink: $!";
-  ($exit) = run_command(
-    $^X, $writer, $linked, "262144", "de,fr", "grp:alt_shift_toggle"
-  );
-  isnt($exit, 0, "refuses to write through an input symlink");
-  is(get_raw($linked_target), $original, "symlink target stays untouched");
-
-  my $invalid = File::Spec->catfile($dir, "invalid-input.lua");
-  put_raw($invalid, "\xff");
-  ($exit) = run_command(
-    $^X, $writer, $invalid, "262144", "de,fr", "grp:alt_shift_toggle"
-  );
-  isnt($exit, 0, "refuses invalid existing UTF-8");
-  is(get_raw($invalid), "\xff", "invalid input stays untouched");
 };
 
 done_testing();
