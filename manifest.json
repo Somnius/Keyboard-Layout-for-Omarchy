@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lef.keyboard-layout",
   "name": "Keyboard Layout",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "author": "lef",
   "license": "MIT",
   "description": "Shows your keyboard layout on the bar and switches it with a click, scroll or key. Set up to four layouts with variants, choose the switch key, and edit input.lua safely with backups and one-click restore.",

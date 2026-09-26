@@ -12,7 +12,7 @@ This page covers how the plugin is put together, how data moves through it, and 
 | `BarWidget.qml` | bar widget | The label on the bar, mouse handling, and hosting the panel. One instance per bar that carries it. |
 | `Panel.qml` | panel | The settings panel: a top strip plus three columns. Keeps an editable draft of the settings. |
 | `Toast.qml` | overlay window | The optional top-center toast. |
-| `InputLua.pl` | helper | The only code that reads or writes `input.lua`. Subcommands: `read`, `write`, `backup`, `backups`, `restore`. |
+| `InputLua.pl` | helper | The only code that reads or writes `input.lua`. Subcommands: `read`, `write`, `backup`, `backups`, `restore`. `write` takes the complete planned `kb_options` plus the value it was planned from, and refuses if the file has changed since. |
 | `BoundedRead.pl` | helper | Reads a regular file with a byte limit, used for `config.json`. |
 | `BoundedExec.pl` | helper | Runs a command and passes on its stdout only if it stays under a byte limit, exits 0 and is valid UTF-8. Used for `hyprctl`, `xkbcli` and the backup list. |
 
@@ -27,6 +27,7 @@ This page covers how the plugin is put together, how data moves through it, and 
   │ index ← hyprctl -j devices   (merged: 150 ms after events)       │
   │ layouts/options ← InputLua.pl read  (on input.lua change)        │
   │ catalog ← xkbcli list --load-exotic (once)                       │
+  │ effective ← hyprctl getoption kb_layout/variant/options          │
   │ settings ← config.json (BoundedRead.pl, on change)               │
   │                                                                  │
   │ switch  → hyprctl --batch "switchxkblayout <kbd> N ; …"          │
@@ -45,7 +46,11 @@ This page covers how the plugin is put together, how data moves through it, and 
 
 Hyprland lists every input device that has a keymap as a "keyboard". On a typical desktop that includes several USB receiver interfaces, headset control interfaces, the ACPI power button, the lid switch, and fcitx5's virtual keyboard. They all carry the same layout list, but only the keyboard you type on moves through it.
 
-- **Reading.** Devices matching `hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus` are dropped. Among the rest, the keyboard named by the most recent `activelayout` event wins, because that is the one being typed on. The highest layout index is only a fallback before any event has arrived. Picking by highest index alone reads the wrong keyboard as soon as the typed keyboard wraps from its last layout back to the first. (This was a bug in 1.1.x.)
+- **Reading.** Devices that nobody types on are dropped:
+  - Omarchy's exclusions: `hl-virtual-keyboard`, `power-button`, `sleep-button`, `lid-switch`, `video-bus`;
+  - names ending in `-hid-events`, `-extra-buttons`, `-consumer-control`, `-system-control` or `-wireless-radio-control`. These are laptop hotkey devices such as a ThinkPad's `intel-hid-events`, and receiver media interfaces. Device capability bits can't tell them apart from real keyboards.
+
+  Among the rest, the keyboard named by the most recent `activelayout` event wins, because that is the one being typed on. Before any event, the keyboard Hyprland flags as `main` is used, and after that the highest layout index. Picking by highest index alone reads the wrong keyboard as soon as the typed keyboard wraps from its last layout back to the first. (This was a bug in 1.1.x.)
 - **Switching.** `next`, `prev` and `set` first re-read the devices, so a Caps Lock toggle a moment ago can't make "next" land on the layout that is already active. They then send one `hyprctl --batch` call that sets **every** typed keyboard to the same **absolute** index. That keeps several physical keyboards in step, and it never touches the virtual and ACPI devices, which is why `switchxkblayout all` isn't used. Only keyboard names matching `^[A-Za-z0-9_.:-]+$` go into the batch string, because `;` and whitespace mean something to `--batch`.
 - **Our own events.** A batch switch raises one `activelayout` per keyboard. For 500 ms after the plugin's own switch, those events update the label but don't change which keyboard counts as "typed on".
 - **Merging.** The label changes from the event data immediately. One `hyprctl -j devices` read (150 ms after the last event) then updates the index. Several events in a row cause one process, not one per event.

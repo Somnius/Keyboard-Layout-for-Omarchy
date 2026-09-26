@@ -72,7 +72,19 @@ sub read_settings {
   return $exit == 0 ? decode_json($out) : { error => $err, exit => $exit };
 }
 
+# Writes the way the service does: plan kb_options from the current read
+# (keep non-switch options, add GROUPS) and pass that read as EXPECTED.
 sub write_settings {
+  my ($input, $backups, $layouts, $variants, $groups) = @_;
+  my $current = read_settings($input);
+  my $present = $current->{present} && $current->{present}{kb_options};
+  my @kept = grep { !/\Agrp(?:_led)?:/ } @{$current->{options} || []};
+  my @options = (@kept, $groups eq "" ? () : split(/,/, $groups));
+  return run_tool("write", $input, $limit, $backups, $layouts, $variants,
+    join(",", @options), $present ? join(",", @{$current->{options}}) : "-");
+}
+
+sub write_raw {
   my ($input, $backups, @rest) = @_;
   return run_tool("write", $input, $limit, $backups, @rest);
 }
@@ -206,27 +218,77 @@ subtest "writer appends when nothing is present" => sub {
 
 subtest "writer validates its arguments" => sub {
   my ($input, $backups) = fixture($omarchy_template);
+  my $live = "grp:caps_toggle,grp_led:caps";
   my @bad = (
-    ["us,gr,de,fr,it", "", "grp:caps_toggle"],
-    ["us;x", "", "grp:caps_toggle"],
-    ["", "", "grp:caps_toggle"],
-    ["us,gr", "intl", "grp:caps_toggle"],
-    ["us,gr", ",bad variant", "grp:caps_toggle"],
-    ["us,gr", "", "compose:ralt"],
-    ["us,gr", "", "grp:caps_toggle,grp:alt_shift_toggle"],
-    ["us,gr", "", "grp:caps_toggle,grp_led:caps,grp_led:num"],
-    ["us,gr", "", "grp:\"x"],
+    ["us,gr,de,fr,it", "", "grp:caps_toggle", $live],
+    ["us;x", "", "grp:caps_toggle", $live],
+    ["", "", "grp:caps_toggle", $live],
+    ["us,gr", "intl", "grp:caps_toggle", $live],
+    ["us,gr", ",bad variant", "grp:caps_toggle", $live],
+    ["us,gr", "", "not an option", $live],
+    ["us,gr", "", "grp:caps_toggle,grp:alt_shift_toggle", $live],
+    ["us,gr", "", "grp:caps_toggle,grp_led:caps,grp_led:num", $live],
+    ["us,gr", "", "compose:ralt,compose:ralt", $live],
+    ["us,gr", "", "grp:\"x", $live],
+    ["us,gr", "", "grp:caps_toggle", "bad expected;"],
   );
   for my $args (@bad) {
-    my ($exit) = write_settings($input, $backups, @$args);
+    my ($exit) = write_raw($input, $backups, @$args);
     is($exit, 64, "rejects @{[join(' | ', @$args)]}");
   }
   is(get_raw($input), $omarchy_template, "rejected writes leave input.lua untouched");
 
   my ($unsafe, $unsafe_backups) = fixture(
     qq{hl.config({ input = { kb_layout = "us", kb_options = "weird option" } })\n});
-  my ($exit) = write_settings($unsafe, $unsafe_backups, "us,gr", "", "grp:caps_toggle");
+  my ($exit) = write_raw($unsafe, $unsafe_backups, "us,gr", "", "grp:caps_toggle", "-");
   is($exit, 11, "refuses to rewrite options it cannot keep faithfully");
+};
+
+subtest "writer refuses a plan made from an older file" => sub {
+  my ($input, $backups) = fixture($omarchy_template);
+  my ($exit) = write_raw($input, $backups, "de", "", "grp:caps_toggle", "grp:alt_shift_toggle");
+  is($exit, 10, "expected options differ from the live ones");
+  ($exit) = write_raw($input, $backups, "de", "", "grp:caps_toggle", "-");
+  is($exit, 10, "expected absent but the key is live");
+  is(get_raw($input), $omarchy_template, "input.lua untouched");
+  is(count_rotating($backups), 0, "no backup for a refused write");
+
+  ($exit) = write_raw($input, $backups, "de", "", "grp:caps_toggle",
+    "grp:caps_toggle,grp_led:caps");
+  is($exit, 0, "the matching expectation writes");
+};
+
+subtest "stock install keeps Omarchy's effective options" => sub {
+  # The issue #1 case: Omarchy's input.lua with everything commented out.
+  my ($input, $backups) = fixture(<<'LUA');
+-- hl.config({
+--   input = {
+--     kb_layout = "us,se",
+--     kb_options = "grp:alt_shift_toggle",
+--   },
+-- })
+LUA
+  my ($exit, undef, $err) = write_raw($input, $backups, "us,se", "",
+    "compose:caps,shift:both_capslock_cancel,grp:alt_shift_toggle", "-");
+  is($exit, 0, "writes the planned options") or diag($err);
+  my $settings = read_settings($input);
+  is_deeply($settings->{layouts}, ["us", "se"], "layouts are live");
+  is_deeply($settings->{options},
+    ["compose:caps", "shift:both_capslock_cancel", "grp:alt_shift_toggle"],
+    "Omarchy's defaults survive alongside the switch key");
+  ok($settings->{present}{kb_variant}, "kb_variant is written with the layouts");
+  is_deeply($settings->{variants}, ["", ""], "as empty variants");
+  like(get_raw($input), qr/\A-- hl\.config\(\{\n--   input/, "the commented example is untouched");
+
+  my ($plain, $plain_backups) = fixture($omarchy_template);
+  ($exit) = write_raw($plain, $plain_backups, "us,gr", "-", "grp:caps_toggle,grp_led:caps",
+    "grp:caps_toggle,grp_led:caps");
+  is($exit, 0, "'-' variants on an unchanged file");
+  is(get_raw($plain), $omarchy_template, "leaves the file byte-identical (no kb_variant added)");
+
+  my ($live, $live_backups) = fixture(qq{hl.config({ input = { kb_layout = "us", kb_variant = "intl", kb_options = "" } })\n});
+  ($exit) = write_raw($live, $live_backups, "us", "-", "", "");
+  is($exit, 64, "'-' is refused when kb_variant is live");
 };
 
 subtest "writer file safety" => sub {
@@ -250,7 +312,7 @@ subtest "writer file safety" => sub {
   is(get_raw($invalid), "\xff", "invalid input untouched");
 
   my ($big, $big_backups) = fixture("-- " . ("x" x 300) . "\n");
-  ($exit) = run_tool("write", $big, "100", $big_backups, "us", "", "grp:caps_toggle");
+  ($exit) = run_tool("write", $big, "100", $big_backups, "us", "", "grp:caps_toggle", "-");
   is($exit, 5, "refuses an oversized input");
 
   my ($blocked, $blocked_backups) = fixture($omarchy_template);

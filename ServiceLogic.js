@@ -4,6 +4,7 @@ var INPUT_MAX_BYTES = 262144
 var CONFIG_MAX_BYTES = 16384
 var DEVICES_MAX_BYTES = 262144
 var XKB_MAX_BYTES = 524288
+var EFFECTIVE_MAX_BYTES = 16384
 var BACKUPS_MAX_BYTES = 65536
 
 // xkb holds at most four groups, so that is what the plugin writes. A file
@@ -25,8 +26,12 @@ var MAX_DESCRIPTION_CHARS = 256
 var MAX_BACKUP_ROWS = 64
 
 // These devices carry the seat layout and answer switchxkblayout, but are not
-// keyboards a user types on (same exclusions as Omarchy's first-party widget).
-var untypedKeyboard = /^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus)/
+// keyboards a user types on: Omarchy's first-party exclusions, plus the
+// hotkey/media pseudo-keyboards laptops and receivers expose (a ThinkPad's
+// intel-hid-events and thinkpad-extra-buttons, a receiver's consumer-control
+// interface). Device capability bits cannot tell these apart from real
+// keyboards, so names are the practical signal.
+var untypedKeyboard = /^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus)|-(hid-events|extra-buttons|consumer-control|system-control|wireless-radio-control)(-[0-9]+)?$/
 var controls = /[\u0000-\u001f\u007f]/
 var layoutName = /^[A-Za-z0-9_+-]{1,64}$/
 var variantName = /^[A-Za-z0-9_+-]{0,64}$/
@@ -161,11 +166,15 @@ function parseLua(text) {
     else if (hotkey === "none" && groupOption.test(option)) hotkey = option
   }
 
+  var present = isRecord(parsed.present) ? parsed.present : {}
   return success({
     layouts: layouts,
     options: parsed.options.slice(),
     hotkey: hotkey,
-    led: led
+    led: led,
+    hasLayout: present.kb_layout === true,
+    hasVariant: present.kb_variant === true,
+    hasOptions: present.kb_options === true
   })
 }
 
@@ -185,6 +194,16 @@ function parseLayoutSpec(spec) {
 // Anything other than plain English (US) there risks a password typed with
 // the wrong characters, so the panel warns and asks before applying it.
 var PASSWORD_SAFE_MAIN = "us"
+
+// Omarchy's own list (default/hypr/input.lua). Hyprland resolves keybindings
+// against the first layout, so with one of these first, Omarchy's SUPER
+// shortcuts stop firing.
+var NON_LATIN_LAYOUTS = " af am ara bd bg by et ge gr il in iq ir kg kh kz la lk mk mm mn mv np rs ru sy th tj ua "
+
+function mainLayoutBreaksBindings(layouts) {
+  if (!Array.isArray(layouts) || layouts.length === 0 || !layouts[0]) return false
+  return NON_LATIN_LAYOUTS.indexOf(" " + layouts[0].layout + " ") !== -1
+}
 
 function mainLayoutRisksPasswords(layouts) {
   if (!Array.isArray(layouts) || layouts.length === 0) return false
@@ -210,9 +229,86 @@ function hotkeyLabel(value) {
   return "Custom (" + value + ")"
 }
 
-// Returns the writer's layout, variant and group-option arguments, or an error.
-// CURRENT_HOTKEY lets an unlisted grp: option already in input.lua be kept.
-function writeArguments(layouts, hotkey, led, currentHotkey) {
+// The physical key a single-key switch occupies. Compose, or a caps:* remap,
+// on that same key cannot also work, so the planner moves or drops it.
+var SWITCH_KEYS = {
+  "grp:caps_toggle": "caps",
+  "grp:shift_caps_toggle": "caps",
+  "grp:alt_caps_toggle": "caps",
+  "grp:toggle": "ralt",
+  "grp:menu_toggle": "menu",
+  "grp:rctrl_toggle": "rctrl",
+  "grp:sclk_toggle": "sclk"
+}
+var COMPOSE_HOMES = ["ralt", "menu", "rctrl"]
+var KEY_NAMES = { caps: "Caps Lock", ralt: "Right Alt", menu: "Menu", rctrl: "Right Ctrl", sclk: "Scroll Lock" }
+
+function keyName(key) {
+  return hasOwn(KEY_NAMES, key) ? KEY_NAMES[key] : key
+}
+
+// Plans the complete kb_options Apply will write. BASE is input.lua's live
+// kb_options when the key is present there, otherwise the options Hyprland
+// currently has in effect (Omarchy's defaults on a stock install), so
+// Compose-on-Caps and friends survive the first Apply. Switch options are
+// replaced by HOTKEY (+ the Caps LED), and key conflicts are resolved with a
+// note for each change.
+function planOptions(base, hotkey, led) {
+  var kept = []
+  var notes = []
+  var seen = {}
+  var switchKey = hasOwn(SWITCH_KEYS, hotkey) ? SWITCH_KEYS[hotkey] : ""
+
+  function push(option) {
+    if (hasOwn(seen, "$" + option)) return
+    seen["$" + option] = true
+    kept.push(option)
+  }
+
+  var composes = (base || []).filter(function (o) { return /^compose:/.test(o) })
+  for (var i = 0; i < (base || []).length; i++) {
+    var option = base[i]
+    if (/^grp(_led)?:/.test(option)) continue
+    if (switchKey === "caps" && /^caps:/.test(option)) {
+      notes.push(option + " is removed: Caps Lock is now the switch key.")
+      continue
+    }
+    var compose = option.match(/^compose:(.+)$/)
+    if (compose && compose[1] === switchKey) {
+      var other = composes.filter(function (o) { return o !== option })
+      if (other.length > 0) {
+        notes.push(option + " is removed: " + keyName(switchKey)
+          + " is now the switch key, and Compose stays on " + keyName(other[0].slice(8)) + ".")
+        continue
+      }
+      var home = ""
+      for (var h = 0; h < COMPOSE_HOMES.length && home === ""; h++) {
+        var candidate = COMPOSE_HOMES[h]
+        if (candidate !== switchKey && composes.indexOf("compose:" + candidate) === -1) home = candidate
+      }
+      if (home !== "") {
+        push("compose:" + home)
+        notes.push("Compose moves from " + keyName(switchKey) + " to " + keyName(home)
+          + ": " + keyName(switchKey) + " is now the switch key.")
+      } else {
+        notes.push(option + " is removed: " + keyName(switchKey) + " is now the switch key.")
+      }
+      continue
+    }
+    push(option)
+  }
+
+  if (hotkey !== "none") push(hotkey)
+  if (led === true && hotkey === LED_HOTKEY) push(LED_OPTION)
+  return { options: kept, notes: notes }
+}
+
+// Returns the writer's arguments, or an error. CURRENT_HOTKEY lets an
+// unlisted grp: option already in input.lua be kept. FILE_OPTIONS is null
+// when input.lua has no live kb_options; EFFECTIVE_OPTIONS are Hyprland's.
+// VARIANT_NEEDED: input.lua has a live kb_variant, or Hyprland has a
+// non-empty one in effect; then kb_variant is always written.
+function writeArguments(layouts, hotkey, led, currentHotkey, fileOptions, effectiveOptions, variantNeeded) {
   if (!Array.isArray(layouts) || layouts.length === 0)
     return failure("Pick at least one layout")
   if (layouts.length > MAX_LAYOUTS)
@@ -237,15 +333,73 @@ function writeArguments(layouts, hotkey, led, currentHotkey) {
       || !(isKnownHotkey(hotkey) || (hotkey === currentHotkey && groupOption.test(hotkey))))
     return failure("Unknown switch key: " + hotkey)
 
-  var groups = []
-  if (hotkey !== "none") groups.push(hotkey)
-  if (led === true && hotkey === LED_HOTKEY) groups.push(LED_OPTION)
+  var present = Array.isArray(fileOptions)
+  var base = present ? fileOptions : (Array.isArray(effectiveOptions) ? effectiveOptions : [])
+  for (var j = 0; j < base.length; j++)
+    if (typeof base[j] !== "string" || base[j].length > MAX_OPTION_CHARS || !optionName.test(base[j]))
+      return failure("Current kb_options contain an entry that cannot be kept safely")
+  var plan = planOptions(base, hotkey, led)
+  if (plan.options.length > MAX_OPTIONS) return failure("Too many kb_options")
 
   var anyVariant = variants.some(function (v) { return v !== "" })
   return success({
     layouts: names.join(","),
-    variants: anyVariant ? variants.join(",") : "",
-    groups: groups.join(",")
+    variants: anyVariant ? variants.join(",") : (variantNeeded === true ? "" : "-"),
+    options: plan.options.join(","),
+    expected: present ? fileOptions.join(",") : "-",
+    notes: plan.notes
+  })
+}
+
+// Reads `hyprctl -j --batch "getoption input:kb_layout ; … kb_variant ;
+// … kb_options"`: three JSON objects separated by blank lines. Returns the
+// values Hyprland has in effect, defaults included.
+function parseEffective(text) {
+  var chunks = String(text).split(/\n\s*\n/).map(function (c) { return c.trim() })
+    .filter(function (c) { return c !== "" })
+  if (chunks.length !== 3) return failure("hyprctl getoption returned an unexpected shape")
+  var values = {}
+  for (var i = 0; i < chunks.length; i++) {
+    var parsed
+    try { parsed = JSON.parse(chunks[i]) }
+    catch (error) { return failure("hyprctl getoption returned invalid JSON") }
+    if (!isRecord(parsed) || typeof parsed.option !== "string"
+        || !isBoundedText(parsed.str, 2048, true))
+      return failure("hyprctl getoption returned an invalid value")
+    values["$" + parsed.option] = parsed.str
+  }
+  var layoutText = values["$input:kb_layout"]
+  var variantText = values["$input:kb_variant"]
+  var optionText = values["$input:kb_options"]
+  if (layoutText === undefined || variantText === undefined || optionText === undefined)
+    return failure("hyprctl getoption is missing a keyboard option")
+
+  var layoutList = layoutText.split(",").map(function (x) { return x.trim() })
+    .filter(function (x) { return x !== "" })
+  var variantList = variantText === "" ? [] : variantText.split(",").map(function (x) { return x.trim() })
+  var optionList = optionText.split(",").map(function (x) { return x.trim() })
+    .filter(function (x) { return x !== "" })
+  if (layoutList.length > MAX_READ_LAYOUTS || optionList.length > MAX_OPTIONS)
+    return failure("hyprctl getoption returned too many entries")
+
+  var layouts = []
+  for (var j = 0; j < layoutList.length; j++) {
+    var variant = variantList[j] || ""
+    if (!layoutName.test(layoutList[j]) || !variantName.test(variant))
+      return failure("hyprctl getoption returned an invalid layout")
+    layouts.push({ layout: layoutList[j], variant: variant })
+  }
+  var hotkey = "none"
+  var led = false
+  for (var k = 0; k < optionList.length; k++) {
+    if (optionList[k].length > MAX_OPTION_CHARS || !optionName.test(optionList[k]))
+      return failure("hyprctl getoption returned an invalid option")
+    if (optionList[k] === LED_OPTION) led = true
+    else if (hotkey === "none" && groupOption.test(optionList[k])) hotkey = optionList[k]
+  }
+  return success({
+    layouts: layouts, options: optionList, hotkey: hotkey, led: led,
+    variantSet: variantText.replace(/,/g, "").trim() !== ""
   })
 }
 
@@ -264,6 +418,9 @@ function selectKeyboard(typed, namedByEvent) {
   if (!typed || typed.length === 0) return null
   for (var i = 0; i < typed.length; i++)
     if (typed[i].name === namedByEvent) return typed[i]
+  // Before any event: the keyboard Hyprland marks main, when it is a typed one.
+  for (var m = 0; m < typed.length; m++)
+    if (typed[m].main === true) return typed[m]
   var furthest = typed[0]
   for (var j = 1; j < typed.length; j++)
     if (typed[j].index > furthest.index) furthest = typed[j]
@@ -298,7 +455,7 @@ function parseDevices(text, namedByEvent) {
       return failure("hyprctl devices contains an invalid layout index")
 
     if (isTypedKeyboard(row.name))
-      typed.push({ name: row.name, keymap: keymap, index: index })
+      typed.push({ name: row.name, keymap: keymap, index: index, main: row.main === true })
   }
 
   var chosen = selectKeyboard(typed, namedByEvent)

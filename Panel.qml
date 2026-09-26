@@ -126,13 +126,32 @@ Panel {
   function isDirty() {
     if (!service) return false
     var current = service.layouts.slice(0, maxLayouts).map(specOf).join(",")
-    return current !== layoutsSel.map(specOf).join(",")
+    return service.usingDefaults
+      || current !== layoutsSel.map(specOf).join(",")
       || hotkeySel !== service.hotkey
       || (hotkeySel === "grp:caps_toggle" && ledSel !== service.led)
   }
 
   function mainRisksPasswords() {
     return Logic.mainLayoutRisksPasswords(layoutsSel)
+  }
+
+  function mainBreaksBindings() {
+    return Logic.mainLayoutBreaksBindings(layoutsSel)
+  }
+
+  // The consequences of the draft's layout 1, for the warning and the confirm.
+  function mainRiskText() {
+    var text = "Password prompts that start on the main layout (hyprlock, new sessions) will type "
+      + mainDescription() + " characters, so a password typed on English (US) may not work."
+    if (mainBreaksBindings())
+      text = "Omarchy's SUPER shortcuts stop working: Hyprland matches keybindings against the "
+        + "first layout, and " + mainDescription() + " has no Latin letters. " + text
+    return text
+  }
+
+  function optionNotes() {
+    return service ? service.planNotes(hotkeySel, ledSel) : []
   }
 
   function requestApply() {
@@ -390,7 +409,18 @@ Panel {
 
               Text {
                 Layout.fillWidth: true
-                text: "1 is the main layout. The toast shows at the top center; other kb_options in input.lua are kept."
+                visible: root.service !== null && root.service.usingDefaults
+                text: "input.lua sets no layouts yet: these are Omarchy's defaults. Apply saves them (and your changes) to input.lua."
+                textFormat: Text.PlainText
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+
+              Text {
+                Layout.fillWidth: true
+                text: "1 is the main layout. Your other kb_options (compose, caps:…) are kept."
                 textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
@@ -402,9 +432,7 @@ Panel {
                 Layout.fillWidth: true
                 visible: root.mainRisksPasswords()
                 text: "⚠ Main layout is " + root.mainDescription() + ", not English (US). "
-                  + "Password prompts that start on the main layout (hyprlock, new sessions) "
-                  + "will type its characters, so a password typed on English (US) may not work. "
-                  + "Keep English (US) as layout 1 unless you type passwords on this layout."
+                  + root.mainRiskText() + " Keep English (US) as layout 1."
                 textFormat: Text.PlainText
                 color: root.urgent
                 font.family: root.fontFamily
@@ -469,6 +497,17 @@ Panel {
                 fontFamily: root.fontFamily
                 enabled: root.hotkeySel === "grp:caps_toggle"
                 onClicked: root.ledSel = !root.ledSel
+              }
+
+              Text {
+                Layout.fillWidth: true
+                visible: root.optionNotes().length > 0
+                text: root.optionNotes().join("\n")
+                textFormat: Text.PlainText
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
               }
 
               Button {
@@ -697,10 +736,8 @@ Panel {
         anchors.fill: parent
         z: 10
         opened: root.applyConfirmOpen
-        message: "Make " + root.mainDescription() + " the main layout? Password prompts that "
-          + "start on the main layout (hyprlock, new sessions) will type its characters, so a "
-          + "password you type on English (US) may be rejected. Keep a way back: Caps Lock, "
-          + "the bar or a backup restore."
+        message: "Make " + root.mainDescription() + " the main layout? " + root.mainRiskText()
+          + " You can switch back from the bar or restore a backup."
         confirmText: "Apply anyway"
         foreground: root.foreground
         fontFamily: root.fontFamily

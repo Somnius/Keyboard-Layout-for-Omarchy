@@ -22,11 +22,22 @@ Item {
     return decodeURIComponent(String(Qt.resolvedUrl(name)).replace(/^file:\/\//, ""))
   }
 
-  // Parsed from ~/.config/hypr/input.lua: [{ layout, variant }], in order.
+  // What is in effect: input.lua's live values, or — for any key input.lua
+  // does not set — what Hyprland reports (Omarchy's defaults on a stock
+  // install). layouts: [{ layout, variant }], in order.
   property var layouts: []
   property var options: []
   property string hotkey: "grp:caps_toggle"   // an xkb grp: option, or "none"
   property bool led: true
+  // True while input.lua sets no live kb_layout, so the panel can say the
+  // shown settings come from Omarchy's defaults.
+  readonly property bool usingDefaults: fileLoaded && !fileLua.hasLayout
+
+  // Raw readings the above are derived from.
+  property var fileLua: ({ layouts: [], options: [], hotkey: "none", led: false,
+                           hasLayout: false, hasOptions: false })
+  property bool fileLoaded: false
+  property var effective: null
 
   // Live state from hyprctl / xkbcli
   property var keyboards: []            // typed keyboards: [{ name, keymap, index }]
@@ -197,12 +208,42 @@ Item {
     var result = Logic.parseLua(text)
     if (!result.ok) return result
 
-    root.layouts = result.value.layouts
-    root.options = result.value.options
-    root.hotkey = result.value.hotkey
-    root.led = result.value.led
+    root.fileLua = result.value
+    root.fileLoaded = true
+    root.deriveSettings()
     root.loaded = true
     return result
+  }
+
+  function applyEffective(text) {
+    var result = Logic.parseEffective(text)
+    if (!result.ok) return result
+    root.effective = result.value
+    root.deriveSettings()
+    return result
+  }
+
+  function deriveSettings() {
+    var file = root.fileLua
+    var eff = root.effective
+    var layoutSource = file.hasLayout || !eff ? file : eff
+    var optionSource = file.hasOptions || !eff ? file : eff
+    root.layouts = layoutSource.layouts
+    root.options = optionSource.options
+    root.hotkey = optionSource.hotkey
+    root.led = optionSource.led
+  }
+
+  // What Apply would do to kb_options for this draft: the notes explain any
+  // Compose / caps:* change a new switch key forces.
+  function planNotes(hk, useLed) {
+    var base = root.fileLua.hasOptions ? root.fileLua.options
+             : (root.effective ? root.effective.options : [])
+    return Logic.planOptions(base, hk, useLed).notes
+  }
+
+  function requestEffectiveRead() {
+    if (!effectiveProc.running) effectiveProc.running = true
   }
 
   function applyConfig(text) {
@@ -386,7 +427,15 @@ Item {
       root.lastError = "A save is already in progress"
       return
     }
-    var args = Logic.writeArguments(layoutList, hk, useLed, root.hotkey)
+    if (!root.fileLua.hasOptions && !root.effective) {
+      root.lastError = "Still reading Hyprland's current keyboard options — try again in a moment"
+      root.requestEffectiveRead()
+      return
+    }
+    var args = Logic.writeArguments(layoutList, hk, useLed, root.hotkey,
+      root.fileLua.hasOptions ? root.fileLua.options : null,
+      root.effective ? root.effective.options : [],
+      root.fileLua.hasVariant || (root.effective !== null && root.effective.variantSet))
     if (!args.ok) {
       root.lastError = args.error
       return
@@ -396,7 +445,7 @@ Item {
     root.lastAction = "Saving input.lua…"
     inputWriteProc.command = ["/usr/bin/perl", root.inputLuaScriptPath, "write",
       root.inputLuaPath, String(Logic.INPUT_MAX_BYTES), root.backupDir,
-      args.value.layouts, args.value.variants, args.value.groups]
+      args.value.layouts, args.value.variants, args.value.options, args.value.expected]
     inputWriteProc.running = true
   }
 
@@ -475,6 +524,7 @@ Item {
       options: root.options,
       hotkey: root.hotkey,
       led: root.led,
+      fromDefaults: root.usingDefaults,
       toast: root.toastEnabled,
       highlight: root.highlightEnabled,
       placement: root.placement,
@@ -787,6 +837,23 @@ Item {
   }
 
   Process {
+    id: effectiveProc
+    command: ["/usr/bin/timeout", "5", "/usr/bin/perl",
+      root.boundedExecScriptPath, String(Logic.EFFECTIVE_MAX_BYTES),
+      "hyprctl", "-j", "--batch",
+      "getoption input:kb_layout ; getoption input:kb_variant ; getoption input:kb_options"]
+    stdout: StdioCollector {
+      id: effectiveOutput
+      waitForEnd: true
+    }
+    onExited: function (exitCode) {
+      var result = exitCode === 0 ? root.applyEffective(effectiveOutput.text)
+                                  : { ok: false, error: "exit " + exitCode }
+      if (!result.ok) console.warn("keyboard-layout", "hyprctl getoption rejected:", result.error)
+    }
+  }
+
+  Process {
     id: switchProc
     onExited: function (exitCode) {
       if (exitCode !== 0) root.lastAction = "hyprctl switchxkblayout failed (" + exitCode + ")"
@@ -840,7 +907,10 @@ Item {
       var name = String(event.name)
       if (name === "activelayout") root.onKeyboardEvent(event)
       // A reload adding a layout raises no activelayout, so notice configreloaded.
-      else if (name === "configreloaded") root.refresh()
+      else if (name === "configreloaded") {
+        root.refresh()
+        root.requestEffectiveRead()
+      }
     }
   }
 
@@ -892,6 +962,7 @@ Item {
 
   Component.onCompleted: {
     root.requestInputRead()
+    root.requestEffectiveRead()
     root.refresh()
     if (!catalogProc.running) catalogProc.running = true
     configDirProc.running = true

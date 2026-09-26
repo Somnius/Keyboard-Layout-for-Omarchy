@@ -59,6 +59,11 @@ TestCase {
     compare(good.value.hotkey, "grp:caps_toggle")
     compare(good.value.led, true)
     compare(good.value.options.join(","), "compose:ralt,grp:caps_toggle,grp_led:caps")
+    compare(good.value.hasOptions, false, "present flags default to absent")
+    var flagged = Logic.parseLua(JSON.stringify({ exists: true, layouts: ["us"], variants: [""],
+      options: [], present: { kb_layout: true, kb_options: true } }))
+    compare(flagged.value.hasLayout, true)
+    compare(flagged.value.hasOptions, true)
 
     var none = Logic.parseLua(readerJson(["us"], [""], ["compose:ralt"]))
     compare(none.value.hotkey, "none", "no grp: option means no switch key")
@@ -125,31 +130,137 @@ TestCase {
     var gr = { layout: "gr", variant: "" }
     var poly = { layout: "gr", variant: "polytonic" }
 
-    var caps = Logic.writeArguments([us, gr], "grp:caps_toggle", true, "grp:caps_toggle")
+    var file = ["grp:caps_toggle", "grp_led:caps"]
+    var caps = Logic.writeArguments([us, gr], "grp:caps_toggle", true, "grp:caps_toggle", file, [])
     verify(caps.ok)
     compare(caps.value.layouts, "us,gr")
-    compare(caps.value.variants, "")
-    compare(caps.value.groups, "grp:caps_toggle,grp_led:caps")
+    compare(caps.value.variants, "-", "no variants, none live, none in effect: leave kb_variant alone")
+    compare(Logic.writeArguments([us, gr], "grp:caps_toggle", true, "", file, [], true).value.variants, "",
+      "a live or effective variant forces kb_variant to be written")
+    compare(caps.value.options, "grp:caps_toggle,grp_led:caps")
+    compare(caps.value.expected, "grp:caps_toggle,grp_led:caps")
 
-    var alt = Logic.writeArguments([us, poly], "grp:alt_shift_toggle", true, "")
+    var alt = Logic.writeArguments([us, poly], "grp:alt_shift_toggle", true, "", file, [])
     compare(alt.value.variants, ",polytonic")
-    compare(alt.value.groups, "grp:alt_shift_toggle", "LED only applies to Caps Lock")
+    compare(alt.value.options, "grp:alt_shift_toggle", "LED only applies to Caps Lock")
 
-    compare(Logic.writeArguments([us], "none", true, "").value.groups, "")
+    compare(Logic.writeArguments([us], "none", true, "", file, []).value.options, "")
 
-    var custom = Logic.writeArguments([us, gr], "grp:win_space_toggle", false, "grp:win_space_toggle")
+    var custom = Logic.writeArguments([us, gr], "grp:win_space_toggle", false, "grp:win_space_toggle", file, [])
     verify(custom.ok, "an existing custom switch key is kept")
-    verify(!Logic.writeArguments([us, gr], "grp:win_space_toggle", false, "grp:caps_toggle").ok,
+    verify(!Logic.writeArguments([us, gr], "grp:win_space_toggle", false, "grp:caps_toggle", file, []).ok,
       "an unlisted switch key cannot be introduced")
 
-    verify(!Logic.writeArguments([], "grp:caps_toggle", false, "").ok)
+    verify(!Logic.writeArguments([], "grp:caps_toggle", false, "", file, []).ok)
     verify(!Logic.writeArguments([us, gr, poly, { layout: "de", variant: "" },
-      { layout: "fr", variant: "" }], "grp:caps_toggle", false, "").ok, "max four layouts")
-    verify(!Logic.writeArguments([us, us], "grp:caps_toggle", false, "").ok, "no duplicates")
-    verify(Logic.writeArguments([gr, poly], "grp:caps_toggle", false, "").ok,
+      { layout: "fr", variant: "" }], "grp:caps_toggle", false, "", file, []).ok, "max four layouts")
+    verify(!Logic.writeArguments([us, us], "grp:caps_toggle", false, "", file, []).ok, "no duplicates")
+    verify(Logic.writeArguments([gr, poly], "grp:caps_toggle", false, "", file, []).ok,
       "same layout with different variants is fine")
-    verify(!Logic.writeArguments([{ layout: "us;x", variant: "" }], "grp:caps_toggle", false, "").ok)
-    verify(!Logic.writeArguments([us], "grp:caps_toggle;x", false, "grp:caps_toggle;x").ok)
+    verify(!Logic.writeArguments([{ layout: "us;x", variant: "" }], "grp:caps_toggle", false, "", file, []).ok)
+    verify(!Logic.writeArguments([us], "grp:caps_toggle;x", false, "grp:caps_toggle;x", file, []).ok)
+    verify(!Logic.writeArguments([us], "grp:caps_toggle", false, "", ["bad option"], []).ok)
+  }
+
+  // Issue #1 / PR #3: a stock input.lua has no live kb_options, so Omarchy's
+  // defaults are in effect and must survive the first Apply.
+  function test_stockInstallKeepsEffectiveOptions() {
+    var us = { layout: "us", variant: "" }
+    var se = { layout: "se", variant: "" }
+    var stock = ["compose:caps", "shift:both_capslock_cancel"]
+
+    var alt = Logic.writeArguments([us, se], "grp:alt_shift_toggle", false, "none", null, stock)
+    verify(alt.ok)
+    compare(alt.value.options, "compose:caps,shift:both_capslock_cancel,grp:alt_shift_toggle")
+    compare(alt.value.expected, "-", "the key was absent in input.lua")
+    compare(alt.value.notes.length, 0)
+
+    var caps = Logic.writeArguments([us, se], "grp:caps_toggle", true, "none", null, stock)
+    compare(caps.value.options,
+      "compose:ralt,shift:both_capslock_cancel,grp:caps_toggle,grp_led:caps",
+      "Compose moves off Caps Lock to Right Alt")
+    compare(caps.value.notes.length, 1)
+    verify(caps.value.notes[0].indexOf("Right Alt") !== -1)
+
+    var fileWins = Logic.writeArguments([us, se], "grp:alt_shift_toggle", false, "none", [], stock)
+    compare(fileWins.value.options, "grp:alt_shift_toggle",
+      "a live (even empty) kb_options in input.lua is the source, not the defaults")
+    compare(fileWins.value.expected, "")
+  }
+
+  function test_planOptionsResolvesKeyConflicts() {
+    var plan = Logic.planOptions(["caps:escape", "compose:caps", "grp:alts_toggle"], "grp:caps_toggle", false)
+    compare(plan.options.join(","), "compose:ralt,grp:caps_toggle")
+    compare(plan.notes.length, 2, "one note for caps:escape, one for Compose")
+
+    var ralt = Logic.planOptions(["compose:ralt"], "grp:toggle", false)
+    compare(ralt.options.join(","), "compose:menu,grp:toggle", "Right Alt switch moves Compose to Menu")
+
+    var taken = Logic.planOptions(["compose:caps", "compose:ralt"], "grp:caps_toggle", false)
+    compare(taken.options.join(","), "compose:ralt,grp:caps_toggle",
+      "an existing second Compose key is kept rather than adding a third")
+    verify(taken.notes[0].indexOf("stays on Right Alt") !== -1)
+
+    var free = Logic.planOptions(["compose:caps", "lv3:ralt_switch"], "grp:alt_shift_toggle", false)
+    compare(free.options.join(","), "compose:caps,lv3:ralt_switch,grp:alt_shift_toggle")
+    compare(free.notes.length, 0, "no conflict, no note")
+
+    compare(Logic.planOptions(["grp_led:scroll", "grp:ctrl_shift_toggle"], "none", true).options.join(","),
+      "", "old switch options go; the LED needs Caps Lock")
+  }
+
+  function test_effectiveOptions() {
+    var text = '{"option": "input:kb_layout", "str": "us,gr", "set": true }\n\n\n'
+      + '{"option": "input:kb_variant", "str": ",polytonic", "set": true }\n\n\n'
+      + '{"option": "input:kb_options", "str": "compose:caps,shift:both_capslock_cancel,grp:alts_toggle", "set": true }'
+    var good = Logic.parseEffective(text)
+    verify(good.ok)
+    compare(good.value.layouts.length, 2)
+    compare(good.value.layouts[1].variant, "polytonic")
+    compare(good.value.hotkey, "grp:alts_toggle")
+    compare(good.value.options.length, 3)
+    verify(good.value.variantSet)
+    verify(!Logic.parseEffective(text.replace(",polytonic", ",")).value.variantSet, "only commas is no variant")
+
+    verify(!Logic.parseEffective("").ok)
+    verify(!Logic.parseEffective('{"option":"input:kb_layout","str":"us"}').ok)
+    verify(!Logic.parseEffective(text.replace("us,gr", "us;x")).ok)
+    verify(!Logic.parseEffective(text.replace("grp:alts_toggle", "bad option")).ok)
+  }
+
+  function test_nonLatinMainBreaksBindings() {
+    verify(Logic.mainLayoutBreaksBindings([{ layout: "gr", variant: "" }]))
+    verify(Logic.mainLayoutBreaksBindings([{ layout: "ru", variant: "phonetic" }]))
+    verify(!Logic.mainLayoutBreaksBindings([{ layout: "de", variant: "" }]), "Latin is fine")
+    verify(!Logic.mainLayoutBreaksBindings([{ layout: "us", variant: "" }, { layout: "gr", variant: "" }]))
+    verify(!Logic.mainLayoutBreaksBindings([]))
+  }
+
+  // Issue #1: ThinkPad hotkey devices outrank the real keyboard's index.
+  function test_laptopDecoysAreNotKeyboards() {
+    var thinkpad = JSON.stringify({ keyboards: [
+      { name: "intel-hid-events", active_keymap: "Swedish", active_layout_index: 1 },
+      { name: "thinkpad-extra-buttons", active_keymap: "English (US)", active_layout_index: 0 },
+      { name: "at-translated-set-2-keyboard", active_keymap: "English (US)", active_layout_index: 0 }
+    ] })
+    var result = Logic.parseDevices(thinkpad, "")
+    compare(result.value.keyboardName, "at-translated-set-2-keyboard")
+    compare(result.value.keyboards.length, 1)
+    verify(!Logic.isTypedKeyboard("logitech-g432-gaming-headset-consumer-control"))
+    verify(!Logic.isTypedKeyboard("roccat-roccat-burst-pro-wireless-radio-control"))
+    verify(!Logic.isTypedKeyboard("asus-wmi-hotkeys-extra-buttons"))
+    verify(Logic.isTypedKeyboard("roccat-roccat-burst-pro-keyboard"))
+    verify(Logic.isTypedKeyboard("cx-2.4g-wireless-receiver"))
+  }
+
+  function test_mainFlagBeatsFurthestBeforeAnyEvent() {
+    var devices = JSON.stringify({ keyboards: [
+      { name: "usb-keyboard", active_keymap: "Greek", active_layout_index: 1, main: false },
+      { name: "laptop-keyboard", active_keymap: "English (US)", active_layout_index: 0, main: true }
+    ] })
+    compare(Logic.parseDevices(devices, "").value.keyboardName, "laptop-keyboard")
+    compare(Logic.parseDevices(devices, "usb-keyboard").value.keyboardName, "usb-keyboard",
+      "an event still wins over the main flag")
   }
 
   function validDevices() {
@@ -184,7 +295,7 @@ TestCase {
     compare(good.value.currentKeymap, "Greek")
     compare(good.value.currentIndex, 1)
     compare(good.value.keyboards.length, 2, "untyped devices are dropped")
-    compare(Object.keys(good.value.keyboards[0]).sort().join(","), "index,keymap,name")
+    compare(Object.keys(good.value.keyboards[0]).sort().join(","), "index,keymap,main,name")
 
     var rows = []
     for (var i = 0; i <= Logic.MAX_DEVICE_ROWS; i++) {

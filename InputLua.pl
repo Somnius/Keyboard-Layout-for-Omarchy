@@ -3,7 +3,7 @@
 # The one place that reads and writes ~/.config/hypr/input.lua.
 #
 #   InputLua.pl read    PATH MAX_BYTES
-#   InputLua.pl write   PATH MAX_BYTES BACKUP_DIR LAYOUTS VARIANTS GROUP_OPTIONS
+#   InputLua.pl write   PATH MAX_BYTES BACKUP_DIR LAYOUTS VARIANTS OPTIONS EXPECTED
 #   InputLua.pl backup  PATH MAX_BYTES BACKUP_DIR
 #   InputLua.pl backups PATH MAX_BYTES BACKUP_DIR
 #   InputLua.pl restore PATH MAX_BYTES BACKUP_DIR BACKUP_ID
@@ -37,7 +37,8 @@ use constant MAX_DIR_ENTRIES => 4096;
 my $LAYOUT_RE = qr/\A[A-Za-z0-9_+-]{1,64}\z/;
 my $VARIANT_RE = qr/\A[A-Za-z0-9_+-]{0,64}\z/;
 my $KEPT_OPTION_RE = qr/\A[A-Za-z0-9_+.-]+:[A-Za-z0-9_+.-]+\z/;
-my $GROUP_OPTION_RE = qr/\Agrp(?:_led)?:[a-z0-9_]{1,48}\z/;
+my $SWITCH_OPTION_RE = qr/\Agrp:[a-z0-9_]{1,48}\z/;
+my $LED_OPTION_RE = qr/\Agrp_led:[a-z0-9_]{1,48}\z/;
 my $ROTATING_ID_RE = qr/\Ainput\.lua\.[0-9]{8}-[0-9]{6}(?:-[0-9]{1,2})?\z/;
 my $ORIGINAL_ID_RE = qr/\Ainput\.lua\.bak\.[0-9]{1,12}(?:\.[0-9]{1,2})?\z/;
 my @KEYS = qw(kb_layout kb_variant kb_options);
@@ -393,33 +394,44 @@ sub command_read {
   emit_json($settings);
 }
 
+# LAYOUTS and VARIANTS line up; OPTIONS is the complete kb_options the panel
+# planned (the service merges, resolves key conflicts and adds the switch
+# key); EXPECTED is the live kb_options it planned from, or "-" when the key
+# was absent, so a plan made from an older file is never written.
 sub parse_requested {
-  my ($layouts_arg, $variants_arg, $groups_arg) = @_;
+  my ($layouts_arg, $variants_arg, $options_arg, $expected_arg) = @_;
   $layouts_arg =~ /\A[^,]+(?:,[^,]+){0,3}\z/ or fail(64, "invalid layouts");
   my @layouts = split(/,/, $layouts_arg, -1);
   for (@layouts) { $_ =~ $LAYOUT_RE or fail(64, "invalid layouts") }
 
-  my @variants = split(/,/, $variants_arg, -1);
-  @variants = ("") x @layouts if $variants_arg eq "";
+  # "-" leaves kb_variant alone: nothing needs it (no variants, no live key,
+  # and no variant in effect from Omarchy's defaults).
+  my $skip_variant = $variants_arg eq "-";
+  my @variants = $skip_variant ? () : split(/,/, $variants_arg, -1);
+  @variants = ("") x @layouts if $variants_arg eq "" || $skip_variant;
   @variants == @layouts or fail(64, "variants must match layouts");
   for (@variants) { $_ =~ $VARIANT_RE or fail(64, "invalid variants") }
 
-  my @groups = $groups_arg eq "" ? () : split(/,/, $groups_arg, -1);
-  @groups <= 2 or fail(64, "invalid options");
-  my ($toggles, $leds) = (0, 0);
-  for (@groups) {
-    $_ =~ $GROUP_OPTION_RE or fail(64, "invalid options");
-    /\Agrp_led:/ ? $leds++ : $toggles++;
+  my @options = $options_arg eq "" ? () : split(/,/, $options_arg, -1);
+  @options <= MAX_OPTIONS or fail(64, "invalid options");
+  my (%seen, $switches, $leds);
+  for (@options) {
+    $_ =~ $KEPT_OPTION_RE && !$seen{$_}++ or fail(64, "invalid options");
+    if (/\Agrp:/) { $_ =~ $SWITCH_OPTION_RE && !$switches++ or fail(64, "invalid options") }
+    if (/\Agrp_led:/) { $_ =~ $LED_OPTION_RE && !$leds++ or fail(64, "invalid options") }
   }
-  $toggles <= 1 && $leds <= 1 or fail(64, "invalid options");
-  return (\@layouts, \@variants, \@groups);
+
+  $expected_arg eq "-" || $expected_arg eq ""
+    || $expected_arg =~ /\A[A-Za-z0-9_+.:,-]{1,2048}\z/
+    or fail(64, "invalid expected options");
+  return (\@layouts, $skip_variant ? undef : \@variants, \@options, $expected_arg);
 }
 
 sub command_write {
-  @ARGV == 6 or fail(64,
-    "usage: InputLua.pl write PATH MAX_BYTES BACKUP_DIR LAYOUTS VARIANTS GROUP_OPTIONS");
+  @ARGV == 7 or fail(64,
+    "usage: InputLua.pl write PATH MAX_BYTES BACKUP_DIR LAYOUTS VARIANTS OPTIONS EXPECTED");
   my ($path, $max, $backup_dir) = ($ARGV[0], byte_limit($ARGV[1]), $ARGV[2]);
-  my ($layouts, $variants, $groups) = parse_requested(@ARGV[3 .. 5]);
+  my ($layouts, $variants, $options, $expected) = parse_requested(@ARGV[3 .. 6]);
 
   my ($source, $metadata, $original) = load_input($path, $max);
   my $text = decode_utf8($original, "input");
@@ -427,17 +439,20 @@ sub command_write {
   my ($current, $error) = settings_from($found);
   $current or fail(11, "input.lua cannot be edited safely: $error");
 
-  my @kept = grep { !/\Agrp(?:_led)?:/ } @{$current->{options}};
-  my @options = (@kept, @$groups);
-  @options <= MAX_OPTIONS or fail(64, "too many options");
+  my $live = $found->{kb_options} ? join(",", @{$current->{options}}) : "-";
+  $live eq $expected or fail(10, "input changed before replacement");
 
+  # kb_variant is written whenever the service asks (VARIANTS not "-"): some
+  # layout has a variant, the key is live, or Omarchy's defaults put a variant
+  # from vconsole.conf in effect that must never pair with the new layouts.
   my %new = (
     kb_layout => join(",", @$layouts),
-    kb_options => join(",", @options),
+    kb_options => join(",", @$options),
   );
-  my $any_variant = grep { $_ ne "" } @$variants;
-  $new{kb_variant} = $any_variant ? join(",", @$variants) : ""
-    if $any_variant || $found->{kb_variant};
+  $found->{kb_variant} && !$variants
+    and fail(64, "kb_variant is live and must be written");
+  $new{kb_variant} = (grep { $_ ne "" } @$variants) ? join(",", @$variants) : ""
+    if $variants;
 
   # Replace from the end so earlier offsets stay valid.
   my @edits = sort { $b->{start} <=> $a->{start} }

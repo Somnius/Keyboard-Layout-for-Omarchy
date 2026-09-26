@@ -19,14 +19,36 @@ This is Omarchy's user input file. The plugin reads it whenever it changes, and 
 | Key | Written | Notes |
 |---|---|---|
 | `kb_layout` | always | 1–4 layouts, comma-separated |
-| `kb_variant` | when any layout has a variant, or the key already exists | lined up with the layouts, e.g. `",polytonic"` |
-| `kb_options` | always | Your non-switch options first (unchanged, same order), then the switch key, then `grp_led:caps` if chosen |
+| `kb_variant` | when any layout has a variant, the key is already live, **or Hyprland has a non-empty variant in effect** | Lined up with the layouts, e.g. `",polytonic"`. The third case protects a stock install whose Omarchy defaults take a variant from `/etc/vconsole.conf`: that variant must never be paired with new layouts. |
+| `kb_options` | always | Your non-switch options first (same order), then the switch key, then `grp_led:caps` if chosen |
+
+### Stock installs: Omarchy's default options are kept
+
+A fresh Omarchy `input.lua` sets no live `kb_options`, so Omarchy's defaults apply: `compose:caps,shift:both_capslock_cancel`, plus `grp:alts_toggle` when your console layout is non-Latin. Before writing, the plugin asks Hyprland which options are **in effect** (`hyprctl getoption input:kb_options`). When `input.lua` has no live `kb_options`, those effective options are the starting point, so Compose on Caps Lock and the other defaults survive your first Apply. When `input.lua` *does* have a live `kb_options`, even an empty one, that file value is the starting point.
+
+Until `input.lua` sets `kb_layout`, the panel shows the layouts in effect and notes that they come from Omarchy's defaults.
+
+The writer only writes if the file's live `kb_options` still matches what the panel planned from. Otherwise it stops with *"input changed"*, and nothing is written.
+
+### Switch key vs Compose and `caps:*`
+
+A single-key switch key takes over that key, so anything else on the same key is adjusted. The panel shows a note for each change **before** you press Apply.
+
+| Switch key uses | Compose on that key (`compose:caps`, `compose:ralt`, …) | `caps:*` remaps (`caps:escape`, …) |
+|---|---|---|
+| Caps Lock (Caps, Shift+Caps, Alt+Caps) | Moves to **Right Alt**. If you already have another Compose key, it's just removed. | removed |
+| Right Alt (`grp:toggle`) | Moves to **Menu** | kept |
+| Menu / Right Ctrl / Scroll Lock | Moves to the first free key of Right Alt, Menu, Right Ctrl | kept |
+
+Chord switch keys (Alt+Shift, Ctrl+Shift, both Alts, …) don't conflict, so nothing changes.
 
 Keys that already exist are changed where they are. A missing key is added on the line after the live `kb_layout` / `kb_options` in the same table. If there's no such line, a small `hl.config({ input = { … } })` block is appended.
 
 ### The main layout and passwords
 
 Layout 1 is the one Hyprland starts on after a reload and in a new session, and many lock screens and password prompts (such as hyprlock) start on it. If it isn't English (US) (`us`, with no variant), a password you normally type on a US layout may produce different characters and be rejected.
+
+If layout 1 is **non-Latin** (Omarchy's own list: `af am ara bd bg by et ge gr il in iq ir kg kh kz la lk mk mm mn mv np rs ru sy th tj ua`), it's worse: Hyprland matches keybindings against the first layout, so **Omarchy's SUPER shortcuts stop working**.
 
 For that reason the panel:
 

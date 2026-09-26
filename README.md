@@ -91,9 +91,10 @@ Omarchy with its shell (Quickshell), Hyprland, `xkbcli`, and Perl with core modu
 
 ## Development
 
+From a local checkout of this repository:
+
 ```sh
-git clone https://github.com/Somnius/Keyboard-Layout-for-Omarchy.git
-ln -s "$PWD/Keyboard-Layout-for-Omarchy" ~/.config/omarchy/plugins/lef.keyboard-layout
+ln -s "$PWD" ~/.config/omarchy/plugins/lef.keyboard-layout
 omarchy restart shell
 ```
 
