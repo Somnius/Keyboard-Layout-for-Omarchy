@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "lef.keyboard-layout",
   "name": "Keyboard Layout",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "lef",
   "license": "MIT",
-  "description": "Display and manage Hyprland keyboard layouts: up to four layouts with variants, synced switching across every keyboard, more switch keys, optional top-center toast, and safe edits of ~/.config/hypr/input.lua with rotating backups and restore.",
+  "description": "Shows your keyboard layout on the bar and switches it with a click, scroll or key. Set up to four layouts with variants, choose the switch key, and edit input.lua safely with backups and one-click restore.",
   "kinds": [
     "service",
     "bar-widget"

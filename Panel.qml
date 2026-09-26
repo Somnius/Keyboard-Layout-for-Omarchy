@@ -681,8 +681,11 @@ Panel {
                 foreground: root.foreground
                 accent: Color.accent
                 fontFamily: root.fontFamily
-                // Ui Panel scope refuses Quickshell.Io Process; open through Qt.
-                onClicked: if (root.service) Qt.openUrlExternally(root.service.repoUrl)
+                // Ui Panel scope refuses Quickshell.Io Process; the service opens it.
+                onClicked: {
+                  if (root.service) root.service.openRepo()
+                  root.close()
+                }
               }
             }
           }

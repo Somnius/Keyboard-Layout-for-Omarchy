@@ -415,6 +415,12 @@ Item {
     return "backing up"
   }
 
+  // Qt.openUrlExternally is unreliable from inside the shell, so external
+  // links go through xdg-open, detached, like the backups folder does.
+  function openRepo() {
+    Quickshell.execDetached(["xdg-open", root.repoUrl])
+  }
+
   // Opens the backups folder in the default file manager, creating it first
   // so there is always something to open.
   function openBackupFolder() {

@@ -1,109 +1,62 @@
 # Keyboard Layout for Omarchy
 
-An [Omarchy](https://omarchy.org/) shell plugin that shows your active keyboard layout in the bar, switches layouts on demand, and manages the layout part of `~/.config/hypr/input.lua` for you. It works with any language, and with up to four layouts at once.
+**See which keyboard layout you're typing in, switch it in one move, and set up your layouts without editing config files.**
 
-The bar label is the active layout's short code (`EN`, `GR`, `DE`, `PT`…):
+An [Omarchy](https://omarchy.org/) bar widget for anyone who types in more than one language. It works with any language: English + Greek, German + Russian, Portuguese + Arabic, … up to four layouts.
 
-| On the bar label | Does |
-|---|---|
-| **Left-click** | Opens the settings panel |
-| **Right-click** | Switches to the next layout |
-| **Scroll down / up** | Switches to the next / previous layout |
-| **Middle-click** | Goes back to the main layout (layout 1) |
-| **Hover** | Shows a tooltip with the full keymap name (`Greek (polytonic)`) |
+<img width="1600" alt="Keyboard Layout: the bar label and the settings panel" src="preview.png" />
 
-<img width="930" alt="Keyboard Layout panel" src="preview.png" />
+## What you get
 
-The panel is laid out in columns: **Layouts**, **Switch key + Display**, and **Backups**. That keeps it short enough for small screens. On a narrow screen the columns wrap to two or one, and the panel scrolls only if nothing else fits.
+- **The layout on your bar.** A short label such as `EN`, `GR` or `DE`. Hover it for the full name, e.g. *Greek (polytonic)*.
+- **Switching your way.** Right-click or scroll on the label, press your switch key, or bind a Hyprland key. Middle-click jumps straight back to your main layout.
+- **Every keyboard at once.** Laptop keyboard, USB receiver, second keyboard: they all switch together and never end up on different layouts.
+- **Setup in a panel, not a text editor.** Pick layouts and variants from a searchable list of 750+, choose a switch key (Caps Lock, Alt+Shift, Ctrl+Shift, and 12 more), then press Apply.
+- **Safe with your config.** Only the layout settings in `~/.config/hypr/input.lua` are touched. Your comments and your other options stay as they are. A backup is taken before every change, and any backup can be restored with one click.
+- **Optional extras, off by default.** A small toast at the top center of the screen when the layout changes, and an accent colour on the label while you're off your main layout.
 
-## Features
-
-- **Any layouts, with variants.** Choose up to four (xkb's limit) from xkb's own table of 750+ layout/variant pairs, e.g. `us`, `gr(polytonic)`, `de(nodeadkeys)`. Each picker is searchable, and rows can be reordered or removed. Layout 1 is the *main* layout.
-- **Warns about passwords.** If layout 1 is anything other than English (US) `us`, the panel shows a warning, and Apply asks you to confirm. Password prompts that start on the main layout, such as hyprlock or a new session, type with that layout's characters, so a password you normally type on English (US) may be rejected.
-- **Switches every keyboard you type on, together.** Receivers, laptop keyboards and macro pads each appear as separate "keyboards" in Hyprland. The plugin sets all of the real ones to the same layout in a single `hyprctl --batch` call, so they can't drift apart. Virtual and ACPI "keyboards" (fcitx5's injector, power button, lid switch) are never touched.
-- **The label follows the keyboard you actually type on.** It takes the name from Hyprland's `activelayout` event, the same logic as Omarchy's own widget, and updates instantly from the event without starting any process.
-- **More switch keys:** Caps Lock, Shift+Caps, Alt+Caps, Alt+Shift, Left Alt+Left Shift, Ctrl+Shift, Left Ctrl+Left Shift, Ctrl+Alt, both Shifts, both Alts, Menu, Right Ctrl, Right Alt, Right Shift, Scroll Lock. There's also **None**, for switching only from the bar or a Hyprland keybinding. Super and Space combinations are never offered because Omarchy uses them. A `grp:` option you set by hand is shown as *Custom* and kept.
-- **Caps LED indicator.** With Caps Lock as the switch key, the LED can light while you're on any layout other than the main one (`grp_led:caps`).
-- **Keeps your other `kb_options`.** Only the layout-switch options (`grp:*`, `grp_led:*`) are ever rewritten. `compose:ralt`, `caps:escape` and the rest stay as they are.
-- **Edits `input.lua` precisely.** Lua comments and strings are understood, so a commented example like `-- kb_variant = "intl"` is never mistaken for a real setting. Only the live values change. Your comments and layout stay untouched, and an Apply that changes nothing doesn't write anything.
-- **Backups and restore.** `input.lua` is copied to a private folder before every Apply or Restore. **Back up now** does the same whenever you like, and the newest 10 are kept. **Open folder** shows them in your default file manager. Any backup, including the original `input.lua.bak.*` from earlier versions, can be restored from the panel or over IPC. See [docs/BACKUPS.md](docs/BACKUPS.md).
-- **Optional toast (off by default).** A short notice at the **top center** of the focused screen, just below the bar, whenever the layout changes: from the switch key, the bar or IPC. It never takes focus or clicks.
-- **Optional accent label (off by default).** The bar label takes your theme's accent colour while you're off the main layout.
-- **Placement choice.** On first run the plugin asks whether the widget lives in the `center` section (right after the clock) or on the `right`. Moving it applies live, with no shell restart. The left section is never offered.
-- **Size-limited, validated input.** `input.lua`, the plugin config, `hyprctl` device data, `xkbcli` output and the backup list are read with byte limits and checked for the expected shape. Anything malformed is rejected and never replaces the last good state.
-
-## Install
+## Quick start
 
 ```sh
 omarchy plugin add https://github.com/Somnius/Keyboard-Layout-for-Omarchy.git --enable
 ```
 
-The widget starts on the right side of the bar. The first-run panel asks whether to keep it there or move it next to the clock.
+1. The widget appears on the bar, and the first time it asks whether it should sit **next to the clock** or on the **right**.
+2. **Left-click** the label to open the panel. Under **Layouts**, keep **English (US)** as layout 1 and add your other layouts (type to search, e.g. `greek` or `polytonic`).
+3. Choose a **Switch key** and press **Apply & reload Hyprland**. Done.
 
-### From a local checkout (development)
+## Using it
 
-```sh
-ln -s "$PWD" ~/.config/omarchy/plugins/lef.keyboard-layout
-omarchy-shell shell rescanPlugins
-```
+| On the bar label | Does |
+|---|---|
+| **Left-click** | Opens the panel |
+| **Right-click** or **scroll down** | Next layout |
+| **Scroll up** | Previous layout |
+| **Middle-click** | Main layout (layout 1) |
+| **Hover** | Full layout name |
 
-> **Dev loop caveat:** Quickshell's file watcher doesn't follow symlinks, and the service is `keepLoaded`. After editing, run `omarchy restart shell`.
+The panel has three columns, and fewer on narrow screens:
 
-Validate the manifest with:
+- **Layouts.** Up to four, with variants. Reorder with ↑ ↓ and remove with ✕. Layout 1 is your *main* layout.
+- **Switch key & Display.**
+  - **Switch key:** the key that cycles layouts, with an optional Caps Lock LED that lights while you're off the main layout.
+  - **Apply:** saves the layout and switch-key settings and reloads Hyprland.
+  - **Display:** the toast, the accent label, and where the widget sits on the bar.
+- **Backups.** Back up now, open the backups folder, or restore any earlier version.
 
-```sh
-omarchy plugin validate "$PWD"
-```
+### Keep English (US) as layout 1 if you type passwords in English
 
-## Usage
+Lock screens and password prompts often start on your main layout. If layout 1 is Greek, for example, a password typed in English comes out as Greek characters and is rejected. The panel warns whenever layout 1 isn't English (US), and asks you to confirm before applying such a change.
 
-1. Left-click the label to open the panel.
-2. Under **Layouts**, pick layout 1 (the main one) and add up to three more. Type in a picker to search, e.g. `greek`, `polytonic` or `de(`.
-3. Under **Switch key**, choose how to cycle layouts, and turn the Caps LED on or off.
-4. Press **Apply & reload Hyprland**. The plugin backs up `input.lua`, writes only the changed values, and reloads Hyprland.
+## Keybindings and scripting
 
-To undo, use **Restore** on any row under **Backups**. Use **Back up now** before editing `input.lua` by hand, and **Open folder** to see the backup files.
-
-## Configuration
-
-Everything is set from the panel. Details on every key and file are in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
-**`~/.config/hypr/input.lua`**. Changed only when you press Apply or Restore:
-
-| Key | Written as | Example |
-|---|---|---|
-| `kb_layout` | comma-separated layouts, 1–4 | `"us,gr"` |
-| `kb_variant` | variants lined up with the layouts. Only written when some layout has a variant, or the key already exists. | `",polytonic"` |
-| `kb_options` | your other options, followed by the chosen `grp:` switch key and optionally `grp_led:caps` | `"compose:ralt,grp:caps_toggle,grp_led:caps"` |
-
-**`~/.config/omarchy/keyboard-layout/config.json`**. The plugin's own settings:
-
-| Key | Values | Default |
-|---|---|---|
-| `asked` | boolean. Set once you answer the placement question. | `false` |
-| `placement` | `center` \| `right` | `right` |
-| `toast` | boolean. Top-center toast on layout change. | `false` |
-| `highlight` | boolean. Accent label while off the main layout. | `false` |
-
-Backups go to `~/.config/omarchy/keyboard-layout/backups/`.
-
-## IPC & keybindings
+Every panel action is also a command:
 
 ```sh
-omarchy-shell lef.keyboard-layout status            # full JSON state
-omarchy-shell lef.keyboard-layout next              # next layout (all keyboards)
-omarchy-shell lef.keyboard-layout prev              # previous layout
-omarchy-shell lef.keyboard-layout set 0             # by index…
-omarchy-shell lef.keyboard-layout set gr            # …by layout…
-omarchy-shell lef.keyboard-layout set 'gr(polytonic)'  # …or by layout(variant)
-omarchy-shell lef.keyboard-layout toast on          # or off
-omarchy-shell lef.keyboard-layout highlight on      # or off
-omarchy-shell lef.keyboard-layout backup            # back up input.lua now
-omarchy-shell lef.keyboard-layout backups           # JSON list of backups
-omarchy-shell lef.keyboard-layout folder            # open the backups folder in the file manager
-omarchy-shell lef.keyboard-layout restore <id>      # restore one, then reload Hyprland
-omarchy-shell lef.keyboard-layout place center      # or right; applies live
-omarchy-shell lef.keyboard-layout toggle            # open/close the panel (also open, close)
+omarchy-shell lef.keyboard-layout next          # or: prev, set 0, set gr, set 'gr(polytonic)'
+omarchy-shell lef.keyboard-layout status        # current state as JSON
+omarchy-shell lef.keyboard-layout backup        # back up input.lua now
+omarchy-shell lef.keyboard-layout toast on      # or off
 ```
 
 Hyprland binding example (`~/.config/hypr/bindings.lua`). This pairs well with the **None** switch key:
@@ -113,30 +66,47 @@ o.bind("SUPER + ALT + K", "Next keyboard layout", "omarchy-shell lef.keyboard-la
 o.bind("SUPER + ALT + J", "Main keyboard layout", "omarchy-shell lef.keyboard-layout set 0")
 ```
 
-Every command, its return values and its edge cases are in [docs/IPC.md](docs/IPC.md).
+The full command list is in [docs/IPC.md](docs/IPC.md).
 
-## How it works
+## What it changes on your system
 
-A service loaded once per shell holds all the state and owns the IPC target. It reads `input.lua` through `InputLua.pl` (a size-limited parser that understands Lua comments), follows Hyprland's `activelayout` and `configreloaded` events, and switches with `hyprctl --batch`. The bar widget and panel only display that state. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture: data flow, safety measures and why each piece exists.
+| File | When | What |
+|---|---|---|
+| `~/.config/hypr/input.lua` | Only when you press **Apply** or **Restore** | `kb_layout`, `kb_variant`, and the layout-switch part of `kb_options`. Everything else in the file is left as it is. |
+| `~/.config/omarchy/keyboard-layout/config.json` | When you change a panel setting | Placement, toast, and accent label |
+| `~/.config/omarchy/keyboard-layout/backups/` | Before every Apply or Restore, or on **Back up now** | Copies of `input.lua`. The newest 10 are kept. |
 
-## Tests
+Nothing else is changed: no system files, and no root access is needed. Details: [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/BACKUPS.md](docs/BACKUPS.md).
+
+## Requirements
+
+Omarchy with its shell (Quickshell), Hyprland, `xkbcli`, and Perl with core modules only. All of these ship with Omarchy. Nothing extra needs installing.
+
+## Documentation
+
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): every setting, the switch-key list, what is written where.
+- [docs/BACKUPS.md](docs/BACKUPS.md): when backups happen, restoring, the backups folder.
+- [docs/IPC.md](docs/IPC.md): all commands and the `status` format.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works inside, and its safety guarantees.
+
+## Development
 
 ```sh
-tests/run.sh
+git clone https://github.com/Somnius/Keyboard-Layout-for-Omarchy.git
+ln -s "$PWD/Keyboard-Layout-for-Omarchy" ~/.config/omarchy/plugins/lef.keyboard-layout
+omarchy restart shell
 ```
 
-This runs the QML logic suite (`tests/tst_ServiceLogic.qml`, through Qt 6's `qmltestrunner`, offscreen) and the Perl I/O suites (`tests/input_lua.t`, `tests/security_io.t`, through `prove`).
-
-## External dependencies
-
-All ship with Omarchy: `hyprctl`, `xkbcli`, Perl (core modules only: `JSON::PP`, `Encode`, `Fcntl`, `POSIX`), the `omarchy` CLI, and `bash`. The tests also use Qt 6's `qmltestrunner` and `prove`.
+- Run the tests with `tests/run.sh`, which runs the QML logic suite and the Perl I/O suites.
+- Validate the manifest with `omarchy plugin validate .`.
+- Quickshell's file watcher doesn't follow symlinks, so run `omarchy restart shell` after editing.
 
 ## Upgrading from 1.1.x
 
-- Layout rows replace the old *Primary / Second* pair. Existing settings are read as they are.
-- Switch keys are now stored as xkb option names (`grp:caps_toggle`). The IPC `status` output reports `hotkey` in that form, and adds `layouts` as `layout(variant)` specs.
-- The one-time `input.lua.bak.<timestamp>` next to `input.lua` is no longer created. Existing ones are kept, listed and restorable. New backups go to the rotating backup folder.
-- Moving the widget no longer restarts the shell or reloads Hyprland.
+- Your current settings are picked up as they are.
+- The old *Primary / Second* choice is replaced by up to four layout rows.
+- The one-time `input.lua.bak.<timestamp>` next to `input.lua` is still listed and restorable, but new backups go to the backups folder.
+- Moving the widget no longer restarts the shell.
 
 ## Uninstall
 
@@ -144,7 +114,7 @@ All ship with Omarchy: `hyprctl`, `xkbcli`, Perl (core modules only: `JSON::PP`,
 omarchy plugin remove lef.keyboard-layout
 ```
 
-If you installed via symlink, remove the symlink instead. Your last-applied `input.lua` settings stay in place. Remove `~/.config/omarchy/keyboard-layout/` too if you don't want to keep the backups.
+Your last-applied layout settings stay in `input.lua`. Remove `~/.config/omarchy/keyboard-layout/` as well if you don't want to keep the backups.
 
 ## License
 
