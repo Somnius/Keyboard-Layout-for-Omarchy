@@ -5,6 +5,9 @@ import qs.Ui
 
 BarWidget {
   id: root
+
+  // The bar only shows a tooltip for a target that reports itself hovered (Omarchy 4.0.4).
+  readonly property bool tooltipHovered: visible && mouseArea.containsMouse
   moduleName: "lef.keyboard-layout"
 
   readonly property var service: bar && bar.shell
@@ -68,6 +71,7 @@ BarWidget {
   }
 
   MouseArea {
+    id: mouseArea
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
