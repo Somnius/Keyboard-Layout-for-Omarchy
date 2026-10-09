@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 BarWidget {
@@ -15,7 +16,7 @@ BarWidget {
   readonly property bool ready: service !== null && service.loaded
   readonly property string displayName: ready && service.currentAbbr !== ""
     ? service.currentAbbr : "⌨"
-  readonly property color baseColor: root.bar ? root.bar.barForeground : Color.foreground
+  readonly property color baseColor: root.bar ? root.bar.barForeground : Commons.Color.foreground
   readonly property bool highlighted: ready && service.highlightEnabled && !service.onMainLayout
 
   implicitWidth: glyph.implicitWidth + Style.space(12)
@@ -60,7 +61,7 @@ BarWidget {
     anchors.centerIn: parent
     text: root.displayName
     textFormat: Text.PlainText
-    color: root.highlighted ? Color.accent : root.baseColor
+    color: root.highlighted ? Commons.Color.accent : root.baseColor
     font.family: root.bar ? root.bar.fontFamily : Style.font.family
     font.pixelSize: Style.font.body
     opacity: root.ready ? 1 : 0.45

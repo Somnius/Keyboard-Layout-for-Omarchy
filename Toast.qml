@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Top-center layout toast. Follows Omarchy's OSD surface (overlay layer, no
@@ -34,8 +35,8 @@ PanelWindow {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.top: parent.top
     anchors.topMargin: Style.space(12)
-    color: Util.alpha(Color.background, 0.97)
-    borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+    color: Util.alpha(Commons.Color.background, 0.97)
+    borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
     radius: Style.cornerRadius
     opacity: root.shown ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 120 } }
@@ -50,7 +51,7 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         text: root.abbr !== "" ? root.abbr : "⌨"
         textFormat: Text.PlainText
-        color: Color.accent
+        color: Commons.Color.accent
         font.family: Style.font.family
         font.bold: true
         font.pixelSize: Style.font.displayLarge
@@ -60,7 +61,7 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         text: root.keymap
         textFormat: Text.PlainText
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         font.family: Style.font.family
         font.bold: true
         font.pixelSize: Style.font.title

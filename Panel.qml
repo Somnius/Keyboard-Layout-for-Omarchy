@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "ServiceLogic.js" as Logic
 
@@ -14,9 +15,9 @@ Panel {
   property var hostWidget: null
   property var service: null
   readonly property var barIdentity: hostWidget || root
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.45)
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // Panel-local draft, seeded from the service: [{ layout, variant }].
@@ -283,7 +284,7 @@ Panel {
                 focusable: true
                 enabled: root.service !== null && root.service.layouts.length > 1
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 onClicked: if (root.service) root.service.prevLayout()
               }
@@ -296,7 +297,7 @@ Panel {
                 focusable: true
                 enabled: root.service !== null && root.service.layouts.length > 1
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 onClicked: if (root.service) root.service.nextLayout()
               }
@@ -338,7 +339,7 @@ Panel {
                     Layout.preferredWidth: Style.space(14)
                     text: String(layoutRow.index + 1)
                     textFormat: Text.PlainText
-                    color: layoutRow.index === 0 ? Color.accent : root.dim
+                    color: layoutRow.index === 0 ? Commons.Color.accent : root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
                     font.bold: layoutRow.index === 0
@@ -363,7 +364,7 @@ Panel {
                     bordered: true
                     enabled: layoutRow.index > 0
                     foreground: root.foreground
-                    accent: Color.accent
+                    accent: Commons.Color.accent
                     fontFamily: root.fontFamily
                     onClicked: root.moveLayout(layoutRow.index, -1)
                   }
@@ -374,7 +375,7 @@ Panel {
                     bordered: true
                     enabled: layoutRow.index < root.layoutsSel.length - 1
                     foreground: root.foreground
-                    accent: Color.accent
+                    accent: Commons.Color.accent
                     fontFamily: root.fontFamily
                     onClicked: root.moveLayout(layoutRow.index, 1)
                   }
@@ -385,7 +386,7 @@ Panel {
                     bordered: true
                     enabled: root.layoutsSel.length > 1
                     foreground: root.foreground
-                    accent: Color.accent
+                    accent: Commons.Color.accent
                     fontFamily: root.fontFamily
                     onClicked: root.removeLayout(layoutRow.index)
                   }
@@ -412,7 +413,7 @@ Panel {
                 visible: root.service !== null && root.service.usingDefaults
                 text: "input.lua sets no layouts yet: these are Omarchy's defaults. Apply saves them (and your changes) to input.lua."
                 textFormat: Text.PlainText
-                color: Color.accent
+                color: Commons.Color.accent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap
@@ -493,7 +494,7 @@ Panel {
                 label: "Caps LED off main"
                 checked: root.ledSel && root.hotkeySel === "grp:caps_toggle"
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 enabled: root.hotkeySel === "grp:caps_toggle"
                 onClicked: root.ledSel = !root.ledSel
@@ -504,7 +505,7 @@ Panel {
                 visible: root.optionNotes().length > 0
                 text: root.optionNotes().join("\n")
                 textFormat: Text.PlainText
-                color: Color.accent
+                color: Commons.Color.accent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap
@@ -518,7 +519,7 @@ Panel {
                 focusable: true
                 enabled: root.service !== null && root.layoutsSel.length > 0 && !root.hasDuplicates()
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 onClicked: root.requestApply()
               }
@@ -558,7 +559,7 @@ Panel {
                 label: "Toast on switch"
                 checked: root.service !== null && root.service.toastEnabled
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 enabled: root.service !== null
                 onClicked: root.service.setToast(!root.service.toastEnabled)
@@ -569,7 +570,7 @@ Panel {
                 label: "Accent off main"
                 checked: root.service !== null && root.service.highlightEnabled
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 enabled: root.service !== null
                 onClicked: root.service.setHighlight(!root.service.highlightEnabled)
@@ -635,7 +636,7 @@ Panel {
                   focusable: true
                   enabled: root.service !== null
                   foreground: root.foreground
-                  accent: Color.accent
+                  accent: Commons.Color.accent
                   fontFamily: root.fontFamily
                   onClicked: root.service.backupNow()
                 }
@@ -649,7 +650,7 @@ Panel {
                   focusable: true
                   enabled: root.service !== null
                   foreground: root.foreground
-                  accent: Color.accent
+                  accent: Commons.Color.accent
                   fontFamily: root.fontFamily
                   onClicked: {
                     root.service.openBackupFolder()
@@ -692,7 +693,7 @@ Panel {
                     bordered: true
                     enabled: backupRow.modelData.valid
                     foreground: root.foreground
-                    accent: Color.accent
+                    accent: Commons.Color.accent
                     fontFamily: root.fontFamily
                     onClicked: root.restoreId = backupRow.modelData.id
                   }
@@ -718,7 +719,7 @@ Panel {
                 focusable: true
                 enabled: root.service !== null
                 foreground: root.foreground
-                accent: Color.accent
+                accent: Commons.Color.accent
                 fontFamily: root.fontFamily
                 // Ui Panel scope refuses Quickshell.Io Process; the service opens it.
                 onClicked: {
