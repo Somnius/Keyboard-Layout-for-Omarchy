@@ -421,7 +421,7 @@ Panel {
 
               Text {
                 Layout.fillWidth: true
-                text: "1 is the main layout. Your other kb_options (compose, caps:…) are kept."
+                text: "1 is the main layout. Your other kb_options (compose, caps:…) are kept, unless they clash with the switch key (a note shows before Apply)."
                 textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily

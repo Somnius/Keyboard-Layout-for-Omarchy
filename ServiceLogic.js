@@ -235,25 +235,64 @@ var SWITCH_KEYS = {
   "grp:caps_toggle": "caps",
   "grp:shift_caps_toggle": "caps",
   "grp:alt_caps_toggle": "caps",
+  "grp:caps_switch": "caps",
+  "grp:shift_caps_switch": "caps",
   "grp:toggle": "ralt",
   "grp:menu_toggle": "menu",
   "grp:rctrl_toggle": "rctrl",
   "grp:sclk_toggle": "sclk"
 }
-var COMPOSE_HOMES = ["ralt", "menu", "rctrl"]
+// Options that put Compose on Caps Lock. Omarchy after 4.0.4 defines its own
+// (Caps Lock stays Caps Lock, Shift+Caps Lock is Compose), and it redefines
+// the whole key, so with it in place no Caps switch key switches.
+var CAPS_COMPOSE = {
+  "compose:caps": "Caps Lock",
+  "compose:caps-altgr": "AltGr+Caps Lock",
+  "omarchy:shift_caps_compose": "Shift+Caps Lock"
+}
+// Options that take Caps Lock over and silence a Caps switch key, besides
+// caps:* (checked with xkbcli against every xkb option).
+var CAPS_TAKEOVERS = ["lv3:caps_switch", "lv3:caps_switch_latch",
+  "lv3:caps_switch_capslock_with_ctrl", "lv5:caps_switch"]
+// Where Compose goes when its key becomes the switch key. Right Ctrl and Menu
+// type Compose on every layout; Right Alt does so only on layout 1, because
+// layouts such as gr and de keep it as their AltGr.
+var COMPOSE_HOMES = ["rctrl", "menu", "ralt"]
+// Options that already use a home key, so Compose there would not work.
+var HOME_USERS = {
+  rctrl: ["ctrl:rctrl_ralt", "ctrl:swap_ralt_rctl", "ctrl:swap_rwin_rctl",
+    "korean:rctrl_hangul", "korean:rctrl_hanja", "lv3:switch", "lv5:rctrl_switch"],
+  menu: ["ctrl:menu_rctrl", "lv3:menu_switch", "lv5:menu_switch"],
+  ralt: ["ctrl:ralt_rctrl", "ctrl:swap_ralt_rctl", "korean:ralt_hangul", "korean:ralt_hanja",
+    "lv3:alt_switch", "lv3:ralt_switch", "lv3:ralt_switch_multikey", "lv5:ralt_switch",
+    "lv5:ralt_switch_lock"]
+}
 var KEY_NAMES = { caps: "Caps Lock", ralt: "Right Alt", menu: "Menu", rctrl: "Right Ctrl", sclk: "Scroll Lock" }
 
 function keyName(key) {
   return hasOwn(KEY_NAMES, key) ? KEY_NAMES[key] : key
 }
 
+// The key a Compose option puts Compose on, or "" for any other option.
+function composeKey(option) {
+  if (hasOwn(CAPS_COMPOSE, option)) return "caps"
+  var match = option.match(/^compose:(.+)$/)
+  return match ? match[1] : ""
+}
+
+function composeLabel(option) {
+  return hasOwn(CAPS_COMPOSE, option) ? CAPS_COMPOSE[option] : keyName(composeKey(option))
+}
+
 // Plans the complete kb_options Apply will write. BASE is input.lua's live
 // kb_options when the key is present there, otherwise the options Hyprland
 // currently has in effect (Omarchy's defaults on a stock install), so
 // Compose-on-Caps and friends survive the first Apply. Switch options are
-// replaced by HOTKEY (+ the Caps LED), and key conflicts are resolved with a
-// note for each change.
+// replaced by HOTKEY (+ the Caps LED). A Compose on the switch key moves once
+// to a free home, or goes when another Compose stays; options that take the
+// switch key over go. Every change gets a note.
 function planOptions(base, hotkey, led) {
+  var options = base || []
   var kept = []
   var notes = []
   var seen = {}
@@ -265,37 +304,64 @@ function planOptions(base, hotkey, led) {
     kept.push(option)
   }
 
-  var composes = (base || []).filter(function (o) { return /^compose:/.test(o) })
-  for (var i = 0; i < (base || []).length; i++) {
-    var option = base[i]
+  function conflicts(option) {
+    return switchKey !== "" && composeKey(option) === switchKey
+  }
+
+  function takesOver(option) {
+    return switchKey === "caps" && (/^caps:/.test(option) || CAPS_TAKEOVERS.indexOf(option) !== -1)
+  }
+
+  var survivor = ""
+  var composeHomes = {}
+  for (var s = 0; s < options.length; s++) {
+    var key = composeKey(options[s])
+    if (key === "") continue
+    composeHomes["$" + key] = true
+    if (survivor === "" && !conflicts(options[s])) survivor = options[s]
+  }
+
+  function free(home) {
+    if (home === switchKey || hasOwn(composeHomes, "$" + home)) return false
+    for (var u = 0; u < options.length; u++)
+      if (HOME_USERS[home].indexOf(options[u]) !== -1 && !takesOver(options[u])) return false
+    return true
+  }
+
+  var moved = ""
+  var handled = {}
+  for (var i = 0; i < options.length; i++) {
+    var option = options[i]
     if (/^grp(_led)?:/.test(option)) continue
-    if (switchKey === "caps" && /^caps:/.test(option)) {
+    if (hasOwn(handled, "$" + option)) continue
+    if (takesOver(option)) {
+      handled["$" + option] = true
       notes.push(option + " is removed: Caps Lock is now the switch key.")
       continue
     }
-    var compose = option.match(/^compose:(.+)$/)
-    if (compose && compose[1] === switchKey) {
-      var other = composes.filter(function (o) { return o !== option })
-      if (other.length > 0) {
-        notes.push(option + " is removed: " + keyName(switchKey)
-          + " is now the switch key, and Compose stays on " + keyName(other[0].slice(8)) + ".")
-        continue
-      }
-      var home = ""
-      for (var h = 0; h < COMPOSE_HOMES.length && home === ""; h++) {
-        var candidate = COMPOSE_HOMES[h]
-        if (candidate !== switchKey && composes.indexOf("compose:" + candidate) === -1) home = candidate
-      }
-      if (home !== "") {
-        push("compose:" + home)
-        notes.push("Compose moves from " + keyName(switchKey) + " to " + keyName(home)
-          + ": " + keyName(switchKey) + " is now the switch key.")
-      } else {
-        notes.push(option + " is removed: " + keyName(switchKey) + " is now the switch key.")
-      }
+    if (!conflicts(option)) {
+      push(option)
       continue
     }
-    push(option)
+    handled["$" + option] = true
+    if (survivor !== "") {
+      notes.push(option + " is removed: " + keyName(switchKey)
+        + " is now the switch key, and Compose stays on " + composeLabel(survivor) + ".")
+      continue
+    }
+    if (moved !== "") {
+      notes.push(option + " is removed: Compose is now on " + keyName(moved) + ".")
+      continue
+    }
+    for (var h = 0; h < COMPOSE_HOMES.length && moved === ""; h++)
+      if (free(COMPOSE_HOMES[h])) moved = COMPOSE_HOMES[h]
+    if (moved !== "") {
+      push("compose:" + moved)
+      notes.push("Compose moves from " + composeLabel(option) + " to " + keyName(moved)
+        + ": " + keyName(switchKey) + " is now the switch key.")
+    } else {
+      notes.push(option + " is removed: " + keyName(switchKey) + " is now the switch key.")
+    }
   }
 
   if (hotkey !== "none") push(hotkey)

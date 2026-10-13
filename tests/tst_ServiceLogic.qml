@@ -177,10 +177,10 @@ TestCase {
 
     var caps = Logic.writeArguments([us, se], "grp:caps_toggle", true, "none", null, stock)
     compare(caps.value.options,
-      "compose:ralt,shift:both_capslock_cancel,grp:caps_toggle,grp_led:caps",
-      "Compose moves off Caps Lock to Right Alt")
+      "compose:rctrl,shift:both_capslock_cancel,grp:caps_toggle,grp_led:caps",
+      "Compose moves off Caps Lock to Right Ctrl")
     compare(caps.value.notes.length, 1)
-    verify(caps.value.notes[0].indexOf("Right Alt") !== -1)
+    verify(caps.value.notes[0].indexOf("Right Ctrl") !== -1)
 
     var fileWins = Logic.writeArguments([us, se], "grp:alt_shift_toggle", false, "none", [], stock)
     compare(fileWins.value.options, "grp:alt_shift_toggle",
@@ -190,11 +190,14 @@ TestCase {
 
   function test_planOptionsResolvesKeyConflicts() {
     var plan = Logic.planOptions(["caps:escape", "compose:caps", "grp:alts_toggle"], "grp:caps_toggle", false)
-    compare(plan.options.join(","), "compose:ralt,grp:caps_toggle")
+    compare(plan.options.join(","), "compose:rctrl,grp:caps_toggle")
     compare(plan.notes.length, 2, "one note for caps:escape, one for Compose")
 
     var ralt = Logic.planOptions(["compose:ralt"], "grp:toggle", false)
-    compare(ralt.options.join(","), "compose:menu,grp:toggle", "Right Alt switch moves Compose to Menu")
+    compare(ralt.options.join(","), "compose:rctrl,grp:toggle", "Right Alt switch moves Compose to Right Ctrl")
+
+    var rctrl = Logic.planOptions(["compose:rctrl"], "grp:rctrl_toggle", false)
+    compare(rctrl.options.join(","), "compose:menu,grp:rctrl_toggle", "Right Ctrl switch moves Compose to Menu")
 
     var taken = Logic.planOptions(["compose:caps", "compose:ralt"], "grp:caps_toggle", false)
     compare(taken.options.join(","), "compose:ralt,grp:caps_toggle",
@@ -207,6 +210,89 @@ TestCase {
 
     compare(Logic.planOptions(["grp_led:scroll", "grp:ctrl_shift_toggle"], "none", true).options.join(","),
       "", "old switch options go; the LED needs Caps Lock")
+  }
+
+  // Omarchy after 4.0.4 defaults to omarchy:shift_caps_compose, which
+  // redefines the whole Caps Lock key and so silences any Caps switch key.
+  function test_planOptionsOmarchyShiftCapsCompose() {
+    var caps = ["grp:caps_toggle", "grp:shift_caps_toggle", "grp:alt_caps_toggle"]
+    for (var i = 0; i < caps.length; i++) {
+      var plan = Logic.planOptions(["omarchy:shift_caps_compose"], caps[i], false)
+      compare(plan.options.join(","), "compose:rctrl," + caps[i], caps[i])
+      compare(plan.notes.length, 1)
+      compare(plan.notes[0], "Compose moves from Shift+Caps Lock to Right Ctrl: Caps Lock is now the switch key.")
+    }
+
+    var led = Logic.planOptions(["omarchy:shift_caps_compose", "grp:alts_toggle"], "grp:caps_toggle", true)
+    compare(led.options.join(","), "compose:rctrl,grp:caps_toggle,grp_led:caps", "non-Latin default")
+
+    var kept = Logic.planOptions(["compose:ralt", "omarchy:shift_caps_compose"], "grp:caps_toggle", false)
+    compare(kept.options.join(","), "compose:ralt,grp:caps_toggle", "another Compose key stays the only one")
+    verify(kept.notes[0].indexOf("stays on Right Alt") !== -1)
+
+    var both = ["compose:caps", "omarchy:shift_caps_compose"]
+    var orders = [both, both.slice().reverse(), both.concat(both)]
+    for (var j = 0; j < orders.length; j++) {
+      var pair = Logic.planOptions(orders[j], "grp:caps_toggle", false)
+      compare(pair.options.join(","), "compose:rctrl,grp:caps_toggle", "moved once, never dropped twice")
+      compare(pair.notes.length, 2, "one move, one removal")
+    }
+
+    var altgr = Logic.planOptions(["compose:caps-altgr"], "grp:caps_toggle", false)
+    compare(altgr.options.join(","), "compose:rctrl,grp:caps_toggle")
+    verify(altgr.notes[0].indexOf("AltGr+Caps Lock") !== -1)
+
+    var other = ["grp:alt_shift_toggle", "grp:ctrl_shift_toggle", "none"]
+    for (var k = 0; k < other.length; k++)
+      compare(Logic.planOptions(["omarchy:shift_caps_compose"], other[k], false).options[0],
+        "omarchy:shift_caps_compose", "kept when Caps Lock is free: " + other[k])
+  }
+
+  function test_planOptionsCapsTakeovers() {
+    var takeovers = ["lv3:caps_switch", "lv3:caps_switch_latch", "lv3:caps_switch_capslock_with_ctrl", "lv5:caps_switch"]
+    for (var i = 0; i < takeovers.length; i++) {
+      var plan = Logic.planOptions([takeovers[i], "compose:ralt"], "grp:caps_toggle", false)
+      compare(plan.options.join(","), "compose:ralt,grp:caps_toggle", takeovers[i])
+      compare(plan.notes.length, 1)
+    }
+    compare(Logic.planOptions(["lv5:caps_switch_lock"], "grp:caps_toggle", false).options.join(","),
+      "lv5:caps_switch_lock,grp:caps_toggle", "does not take over the switch")
+    compare(Logic.planOptions(["lv3:caps_switch"], "grp:alt_shift_toggle", false).options.join(","),
+      "lv3:caps_switch,grp:alt_shift_toggle", "kept when Caps Lock is free")
+  }
+
+  function test_planOptionsSkipsOccupiedHomes() {
+    var rctrl = Logic.planOptions(["omarchy:shift_caps_compose", "lv5:rctrl_switch"], "grp:caps_toggle", false)
+    compare(rctrl.options.join(","), "compose:menu,lv5:rctrl_switch,grp:caps_toggle", "moved in place")
+    compare(rctrl.notes[0], "Compose moves from Shift+Caps Lock to Menu: Caps Lock is now the switch key.")
+
+    var two = Logic.planOptions(["compose:caps", "ctrl:swap_ralt_rctl", "lv3:menu_switch"], "grp:caps_toggle", false)
+    compare(two.options.join(","), "ctrl:swap_ralt_rctl,lv3:menu_switch,grp:caps_toggle", "no free home")
+    compare(two.notes[0], "compose:caps is removed: Caps Lock is now the switch key.")
+
+    var custom = Logic.planOptions(["compose:caps"], "grp:caps_switch", false)
+    compare(custom.options.join(","), "compose:rctrl,grp:caps_switch", "a custom Caps switch counts too")
+  }
+
+  function test_stockInstallNewOmarchyDefaults() {
+    var us = { layout: "us", variant: "" }
+    var gr = { layout: "gr", variant: "" }
+    var text = '{"option": "input:kb_layout", "str": "us,gr", "set": true }\n\n\n'
+      + '{"option": "input:kb_variant", "str": "", "set": true }\n\n\n'
+      + '{"option": "input:kb_options", "str": "omarchy:shift_caps_compose,grp:alts_toggle", "set": true }'
+    var effective = Logic.parseEffective(text)
+    verify(effective.ok)
+    compare(effective.value.hotkey, "grp:alts_toggle")
+
+    var caps = Logic.writeArguments([us, gr], "grp:caps_toggle", true, "grp:alts_toggle", null, effective.value.options)
+    verify(caps.ok)
+    compare(caps.value.options, "compose:rctrl,grp:caps_toggle,grp_led:caps")
+    compare(caps.value.expected, "-")
+    compare(caps.value.notes.length, 1)
+
+    var alts = Logic.writeArguments([us, gr], "grp:alt_shift_toggle", false, "grp:alts_toggle", null, effective.value.options)
+    compare(alts.value.options, "omarchy:shift_caps_compose,grp:alt_shift_toggle")
+    compare(alts.value.notes.length, 0)
   }
 
   function test_effectiveOptions() {

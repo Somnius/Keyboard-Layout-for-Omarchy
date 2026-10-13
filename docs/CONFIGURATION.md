@@ -24,7 +24,7 @@ This is Omarchy's user input file. The plugin reads it whenever it changes, and 
 
 ### Stock installs: Omarchy's default options are kept
 
-A fresh Omarchy `input.lua` sets no live `kb_options`, so Omarchy's defaults apply: `compose:caps,shift:both_capslock_cancel`, plus `grp:alts_toggle` when your console layout is non-Latin. Before writing, the plugin asks Hyprland which options are **in effect** (`hyprctl getoption input:kb_options`). When `input.lua` has no live `kb_options`, those effective options are the starting point, so Compose on Caps Lock and the other defaults survive your first Apply. When `input.lua` *does* have a live `kb_options`, even an empty one, that file value is the starting point.
+A fresh Omarchy `input.lua` sets no live `kb_options`, so Omarchy's defaults apply: `compose:caps,shift:both_capslock_cancel` on Omarchy 4.0.4, and `omarchy:shift_caps_compose` (Caps Lock stays Caps Lock, Shift+Caps Lock is Compose) on later versions, plus `grp:alts_toggle` when your console layout is non-Latin. Before writing, the plugin asks Hyprland which options are **in effect** (`hyprctl getoption input:kb_options`). When `input.lua` has no live `kb_options`, those effective options are the starting point, so Compose on Caps Lock and the other defaults survive your first Apply. When `input.lua` *does* have a live `kb_options`, even an empty one, that file value is the starting point.
 
 Until `input.lua` sets `kb_layout`, the panel shows the layouts in effect and notes that they come from Omarchy's defaults.
 
@@ -34,11 +34,15 @@ The writer only writes if the file's live `kb_options` still matches what the pa
 
 A single-key switch key takes over that key, so anything else on the same key is adjusted. The panel shows a note for each change **before** you press Apply.
 
-| Switch key uses | Compose on that key (`compose:caps`, `compose:ralt`, …) | `caps:*` remaps (`caps:escape`, …) |
+| Switch key uses | Compose on that key (`compose:caps`, `compose:caps-altgr`, `omarchy:shift_caps_compose`, `compose:ralt`, …) | Other options on that key |
 |---|---|---|
-| Caps Lock (Caps, Shift+Caps, Alt+Caps) | Moves to **Right Alt**. If you already have another Compose key, it's just removed. | removed |
-| Right Alt (`grp:toggle`) | Moves to **Menu** | kept |
-| Menu / Right Ctrl / Scroll Lock | Moves to the first free key of Right Alt, Menu, Right Ctrl | kept |
+| Caps Lock (Caps, Shift+Caps, Alt+Caps) | Moves to **Right Ctrl**. If you already have another Compose key, it's just removed. | `caps:*`, `lv3:caps_switch`, `lv3:caps_switch_latch`, `lv3:caps_switch_capslock_with_ctrl` and `lv5:caps_switch` are removed |
+| Right Alt (`grp:toggle`) | Moves to **Right Ctrl** | kept |
+| Menu / Right Ctrl / Scroll Lock | Moves to the first free key of Right Ctrl, Menu, Right Alt | kept |
+
+Compose moves only once, even if several options put it on the switch key, and never onto a key that another option already uses (for example Right Ctrl with `lv5:rctrl_switch`, or Right Alt with `lv3:ralt_switch`). Right Ctrl comes first because it types Compose on every layout. Right Alt does so only on layout 1, because layouts such as `gr` and `de` keep it as their AltGr.
+
+Omarchy's `omarchy:shift_caps_compose` redefines the whole Caps Lock key, so with it in place a Caps switch key wouldn't switch at all. That's why it moves too. `tests/keymap.t` checks these results with `xkbcli`.
 
 Chord switch keys (Alt+Shift, Ctrl+Shift, both Alts, …) don't conflict, so nothing changes.
 
