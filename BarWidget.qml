@@ -3,6 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "ServiceLogic.js" as Logic
 
 BarWidget {
   id: root
@@ -18,6 +19,10 @@ BarWidget {
     ? service.currentAbbr : "⌨"
   readonly property color baseColor: root.bar ? root.bar.barForeground : Commons.Color.foreground
   readonly property bool highlighted: ready && service.highlightEnabled && !service.onMainLayout
+  // Where the bar really has the widget, which a drag can change behind the
+  // plugin's back. layoutConfig is a copy the bar hands its widgets.
+  readonly property var barLayout: root.bar ? root.bar.layoutConfig : null
+  readonly property string barSection: Logic.barSectionOf(root.barLayout, root.moduleName)
 
   implicitWidth: glyph.implicitWidth + Style.space(12)
   implicitHeight: barSize

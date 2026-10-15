@@ -118,6 +118,61 @@ function parseConfig(text) {
   })
 }
 
+// The bar section holding the widget, read from the bar's layoutConfig.
+// Omarchy 4.0.4 has left/center/right; the next release has left,
+// centerBegin, center (the clock's box), centerEnd, right and tray (the
+// tray's drawer). A replacement bar may hand over bare ids or nothing.
+var BAR_SECTIONS = ["left", "centerBegin", "center", "centerEnd", "right", "tray"]
+var MAX_SECTION_ENTRIES = 128
+
+function barSectionOf(layout, id) {
+  if (!isRecord(layout)) return ""
+  for (var s = 0; s < BAR_SECTIONS.length; s++) {
+    var name = BAR_SECTIONS[s]
+    var list = Object.prototype.hasOwnProperty.call(layout, name) ? layout[name] : null
+    if (!Array.isArray(list)) continue
+    for (var i = 0; i < list.length && i < MAX_SECTION_ENTRIES; i++) {
+      var entry = list[i]
+      var entryId = typeof entry === "string" ? entry : (isRecord(entry) ? entry.id : "")
+      if (entryId === id) return name
+    }
+  }
+  return ""
+}
+
+// What the panel calls a section: the three parts around the clock are all
+// "center", and the tray's drawer is its own place, not "right".
+function placementOf(section) {
+  if (section === "left" || section === "right" || section === "tray") return section
+  if (section === "centerBegin" || section === "center" || section === "centerEnd") return "center"
+  return ""
+}
+
+// `omarchy bar move` arguments. Center means right after the clock: on the
+// split bar that is the start of centerEnd, as --after omarchy.clock would
+// land inside the clock's own box.
+function isSplitBar(layout) {
+  return isRecord(layout) && Object.prototype.hasOwnProperty.call(layout, "centerEnd")
+}
+
+function placeArgs(target, layout) {
+  var split = isSplitBar(layout)
+  if (target === "center")
+    return split ? ["--section", "centerEnd", "--index", "0"]
+      : ["--section", "center", "--after", "omarchy.clock"]
+  if (target === "right") return ["--section", "right"]
+  return []
+}
+
+// Whether the widget already sits where placeArgs would move it, by the raw
+// section: on the split bar the clock's box and centerBegin are not "right
+// after the clock".
+function isPlacedAt(target, layout, section) {
+  if (target === "center") return section === (isSplitBar(layout) ? "centerEnd" : "center")
+  if (target === "right") return section === "right"
+  return false
+}
+
 function configText(state) {
   return JSON.stringify({
     asked: true,

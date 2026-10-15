@@ -579,19 +579,32 @@ Panel {
               Dropdown {
                 Layout.fillWidth: true
                 label: root.service && root.service.askedState === -1 ? "Where should it live?" : "Bar section"
+                id: placementDropdown
                 value: root.service ? root.service.placement : "right"
                 options: ["center", "right"]
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 enabled: root.service !== null
-                onChanged: function (value) { if (root.service) root.service.place(value) }
+                onChanged: function (value) {
+                  if (root.service) root.service.place(value)
+                  // Picking assigns value; bind it again so a drag shows up.
+                  placementDropdown.value = Qt.binding(function () {
+                    return root.service ? root.service.placement : "right"
+                  })
+                }
               }
 
               Text {
                 Layout.fillWidth: true
                 text: root.service && root.service.lastPlaceAction !== ""
                   ? root.service.lastPlaceAction
-                  : "Center sits right after the clock."
+                  : root.service && root.service.livePlacement === "left"
+                    ? "It's on the left now (moved by hand). Pick a section to move it."
+                    : root.service && root.service.livePlacement === "tray"
+                      ? "It's in the tray's drawer now. Pick a section to move it."
+                      : root.service && root.service.besideClockOff
+                        ? "It's in the middle but not right after the clock (moved by hand). Pick Center to move it there."
+                        : "Center sits right after the clock."
                 textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily

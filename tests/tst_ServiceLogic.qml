@@ -599,4 +599,57 @@ TestCase {
     compare(Logic.searchBackspace(""), "")
     compare(Logic.searchBackspace("a\ud83d\ude00"), "a", "a surrogate pair goes as one character")
   }
+
+  // Omarchy 4.0.4's bar has left/center/right; the next release splits center
+  // into centerBegin, center (the clock's box) and centerEnd, and adds the
+  // tray's drawer.
+  function test_barSection() {
+    var old = {
+      left: [{ id: "omarchy.menu" }],
+      center: [{ id: "omarchy.clock" }, { id: "lef.keyboard-layout" }],
+      right: [{ id: "omarchy.tray" }]
+    }
+    var next = {
+      left: [], centerBegin: [{ id: "omarchy.indicators" }], center: [{ id: "omarchy.clock" }],
+      centerEnd: [{ id: "lef.keyboard-layout" }, { id: "omarchy.weather" }], right: [], tray: []
+    }
+    compare(Logic.barSectionOf(old, "lef.keyboard-layout"), "center")
+    compare(Logic.barSectionOf(next, "lef.keyboard-layout"), "centerEnd")
+    compare(Logic.barSectionOf({ right: ["lef.keyboard-layout"] }, "lef.keyboard-layout"), "right",
+      "a replacement bar may hand over bare ids")
+    compare(Logic.barSectionOf({ tray: [{ id: "lef.keyboard-layout" }] }, "lef.keyboard-layout"), "tray")
+    compare(Logic.barSectionOf(old, "lef.other"), "")
+    compare(Logic.barSectionOf(null, "lef.keyboard-layout"), "")
+    compare(Logic.barSectionOf({ center: "lef.keyboard-layout", right: [null, 5, {}] }, "lef.keyboard-layout"), "")
+
+    compare(Logic.placementOf("left"), "left")
+    compare(Logic.placementOf("centerBegin"), "center")
+    compare(Logic.placementOf("center"), "center")
+    compare(Logic.placementOf("centerEnd"), "center")
+    compare(Logic.placementOf("right"), "right")
+    compare(Logic.placementOf("tray"), "tray", "the drawer is not the right section")
+    compare(Logic.placementOf(""), "")
+    compare(Logic.placementOf("toString"), "")
+
+    compare(Logic.placeArgs("center", old), ["--section", "center", "--after", "omarchy.clock"])
+    compare(Logic.placeArgs("center", next), ["--section", "centerEnd", "--index", "0"],
+      "beside the clock is the start of centerEnd, not inside the clock's box")
+    compare(Logic.placeArgs("center", null), ["--section", "center", "--after", "omarchy.clock"])
+    compare(Logic.placeArgs("right", old), ["--section", "right"])
+    compare(Logic.placeArgs("right", next), ["--section", "right"])
+    compare(Logic.placeArgs("left", next), [])
+    var emptySplit = { left: [], centerBegin: [], center: [], centerEnd: [], right: [], tray: [] }
+    compare(Logic.placeArgs("center", emptySplit), ["--section", "centerEnd", "--index", "0"],
+      "an empty centerEnd still marks the split bar")
+
+    // Already there only when the widget sits where the move would put it.
+    verify(Logic.isPlacedAt("center", old, "center"))
+    verify(Logic.isPlacedAt("center", next, "centerEnd"))
+    verify(!Logic.isPlacedAt("center", next, "center"), "inside the clock's box is not beside it")
+    verify(!Logic.isPlacedAt("center", next, "centerBegin"))
+    verify(Logic.isPlacedAt("right", next, "right"))
+    verify(!Logic.isPlacedAt("right", next, "tray"))
+    verify(!Logic.isPlacedAt("center", old, "left"))
+    verify(!Logic.isPlacedAt("center", old, ""))
+  }
 }

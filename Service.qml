@@ -120,6 +120,30 @@ Item {
     saveConfig()
   }
 
+  // The section the bar really has the widget in: "left", "center",
+  // "right", "tray" (the tray's drawer), or "" when the bar doesn't say.
+  readonly property var placementHost: root.panelHosts.length > 0
+    ? root.panelHosts[root.panelHosts.length - 1] : null
+  readonly property string liveSection: root.placementHost ? root.placementHost.barSection : ""
+  readonly property string livePlacement: Logic.placementOf(root.liveSection)
+  // On the split bar: inside the clock's box or before it, not right after.
+  readonly property bool besideClockOff: root.placementHost !== null
+    && Logic.isSplitBar(root.placementHost.barLayout)
+    && (root.liveSection === "center" || root.liveSection === "centerBegin")
+  onLivePlacementChanged: root.syncPlacement()
+
+  // Follow a widget dragged between center and right. Before the first-run
+  // answer only the shown value changes: saving would mark it answered.
+  function syncPlacement() {
+    if (root.pendingPlacement !== "" || placeProc.running) return
+    var live = root.livePlacement
+    // A move made by hand makes the last "Moved to …" note stale.
+    if (live !== "" && live !== root.placement) root.lastPlaceAction = ""
+    if ((live !== "center" && live !== "right") || live === root.placement) return
+    root.placement = live
+    if (root.askedState === 1) saveConfig()
+  }
+
   function place(section) {
     if (section !== "center" && section !== "right") {
       root.lastPlaceAction = "Only center or right — never left"
@@ -129,16 +153,19 @@ Item {
       root.lastPlaceAction = "A placement move is already in progress"
       return
     }
-    if (section === root.placement) {
+    var layout = root.placementHost ? root.placementHost.barLayout : null
+    var placed = root.liveSection !== ""
+      ? Logic.isPlacedAt(section, layout, root.liveSection)
+      : section === root.placement
+    if (placed) {
+      root.placement = section
       saveConfig()
       root.lastPlaceAction = "Already on the " + section
       return
     }
 
     root.pendingPlacement = section
-    var args = ["omarchy", "bar", "move", root.moduleId, "--section", section]
-    if (section === "center") args.push("--after", "omarchy.clock")
-    placeProc.command = args
+    placeProc.command = ["omarchy", "bar", "move", root.moduleId].concat(Logic.placeArgs(section, layout))
     placeProc.running = true
     root.lastPlaceAction = "Moving to " + section + "…"
   }
@@ -255,6 +282,7 @@ Item {
     root.toastEnabled = result.value.toast
     root.highlightEnabled = result.value.highlight
     root.configHasGoodState = true
+    root.syncPlacement()
     return result
   }
 
@@ -605,7 +633,7 @@ Item {
     function place(section: string): string {
       if (section !== "center" && section !== "right") return "use center or right"
       root.place(section)
-      return "moving to " + section
+      return root.lastPlaceAction
     }
     function toast(state: string): string {
       if (state !== "on" && state !== "off") return "use on or off"
@@ -650,8 +678,8 @@ Item {
     }
   }
 
-  // `omarchy bar move` rewrites shell.json, which the running shell watches
-  // and applies live: no Hyprland reload or shell restart is needed.
+  // `omarchy bar move` asks the running shell to move the widget, which
+  // applies it live and saves shell.json: no reload or restart is needed.
   Process {
     id: placeProc
     stderr: StdioCollector {

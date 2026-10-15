@@ -18,7 +18,7 @@ omarchy-shell lef.keyboard-layout <command> [argument]
 | `backups` | — | JSON list | Backups ([BACKUPS.md](BACKUPS.md)) |
 | `folder` | — | `opening <path>` | Opens the backups folder in the default file manager (`xdg-open`) |
 | `restore` | backup id | `restoring <id>` / reason | Restores a backup and reloads Hyprland |
-| `place` | `center` \| `right` | `moving to …` | Moves the bar widget (applies live) |
+| `place` | `center` \| `right` | `Moving to …` or `Already on the …` | Moves the bar widget (applies live) |
 | `open` / `close` / `toggle` | — | `ok` / `no bar widget` | The panel, on the focused monitor's bar |
 
 ## `set`

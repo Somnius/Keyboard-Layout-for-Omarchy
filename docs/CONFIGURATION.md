@@ -98,6 +98,10 @@ The plugin's own settings, written by the panel and IPC (atomic write). Example:
 |---|---|---|---|
 | `asked` | boolean | `false` | The first-run placement question has been answered. While `false`, the panel opens by itself once. |
 | `placement` | `"center"` \| `"right"` | `"right"` | Bar section. `center` means right after `omarchy.clock`. |
+
+`center` means right after the clock on both bars. Omarchy 4.0.4 has `left`, `center` and `right`, and the plugin moves the widget with `omarchy bar move … --section center --after omarchy.clock`. The next Omarchy release splits the middle into `centerBegin`, `center` (the clock's own box) and `centerEnd`, and adds the tray's drawer (`tray`). There the plugin moves the widget to the start of `centerEnd`, as `--after omarchy.clock` would put it inside the clock's box. The plugin tells the two bars apart by the sections the bar hands its widgets (`bar.layoutConfig`).
+
+The panel follows where the bar really has the widget. If you drag it between the center and the right, `placement` follows (once the first-run question is answered). If you drag it to the left, into the tray's drawer, or next to the clock but not right after it, the panel says so, and picking a section moves it.
 | `toast` | boolean | `false` | Show the top-center toast on every layout change. |
 | `highlight` | boolean | `false` | Show the bar label in the accent colour while off the main layout. |
 
