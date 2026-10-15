@@ -345,7 +345,7 @@ Panel {
                     font.bold: layoutRow.index === 0
                   }
 
-                  SearchableDropdown {
+                  LayoutSearchDropdown {
                     Layout.fillWidth: true
                     showLabel: false
                     label: layoutRow.index === 0 ? "Main layout" : "Layout " + (layoutRow.index + 1)
@@ -393,7 +393,7 @@ Panel {
                 }
               }
 
-              SearchableDropdown {
+              LayoutSearchDropdown {
                 Layout.fillWidth: true
                 visible: root.layoutsSel.length < root.maxLayouts
                 showLabel: false

@@ -575,4 +575,28 @@ TestCase {
     verify(!Logic.parseBackups('[{"id":"../x","kind":"rotating","time":1,"size":1,"layouts":"","valid":true}]').ok)
     verify(!Logic.parseBackups('[{"id":"input.lua.bak.1","kind":"other","time":1,"size":1,"layouts":"","valid":true}]').ok)
   }
+
+  function test_searchQuery() {
+    verify(Logic.isSearchText("a"))
+    verify(Logic.isSearchText("α"))
+    verify(Logic.isSearchText("@"))
+    verify(!Logic.isSearchText(""))
+    verify(!Logic.isSearchText("\t"), "Tab moves focus, it is not typed")
+    verify(!Logic.isSearchText("\r"))
+    verify(!Logic.isSearchText("\u007f"))
+    verify(!Logic.isSearchText("\u0085"))
+    verify(!Logic.isSearchText("a\nb"), "every character is checked, not just the first")
+    verify(!Logic.isSearchText(undefined))
+
+    compare(Logic.searchTyped("gre", "e", 64), "gree")
+    compare(Logic.searchTyped("gre", "\t", 64), "gre")
+    var full = "x".repeat(64)
+    compare(Logic.searchTyped(full, "y", 64), full, "the query stops at the cap")
+    compare(Logic.searchTyped("x".repeat(63), "\ud83d\ude00", 64).length, 65,
+      "the cap counts characters, so one astral character still fits")
+
+    compare(Logic.searchBackspace("abc"), "ab")
+    compare(Logic.searchBackspace(""), "")
+    compare(Logic.searchBackspace("a\ud83d\ude00"), "a", "a surrogate pair goes as one character")
+  }
 }

@@ -719,3 +719,31 @@ function parseBackups(text) {
   }
   return success(rows)
 }
+
+// The layout search box (LayoutSearchDropdown.qml) builds its query from key
+// events, never from a text input. Only printable text is typed: Tab, Return
+// and other control characters keep their key meaning. Lengths count
+// characters, not UTF-16 units, so Backspace never splits a surrogate pair.
+var SEARCH_MAX_CHARS = 64
+
+function isSearchText(text) {
+  if (typeof text !== "string" || text === "") return false
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i)
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false
+  }
+  return true
+}
+
+function searchTyped(query, text, max) {
+  if (!isSearchText(text)) return query
+  if ([...query].length + [...text].length > max) return query
+  return query + text
+}
+
+function searchBackspace(query) {
+  // Spread, not Array.from: V4's Array.from splits a string into UTF-16 units.
+  var chars = [...query]
+  chars.pop()
+  return chars.join("")
+}
